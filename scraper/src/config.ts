@@ -12,6 +12,7 @@ export const config = {
   serviceUser: env("SERVICE_USER", "scraper"),
   servicePass: env("SERVICE_PASS", ""),
 
+  redisUrl: env("REDIS_URL", ""),
   redisHost: env("REDIS_HOST", "localhost"),
   redisPort: envInt("REDIS_PORT", 6379),
 

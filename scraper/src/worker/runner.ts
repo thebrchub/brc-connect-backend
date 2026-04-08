@@ -82,7 +82,8 @@ export class Runner {
     const { controller, cleanup } = listenForKill(
       config.redisHost,
       config.redisPort,
-      job.job_id
+      job.job_id,
+      config.redisUrl || undefined,
     );
     const timeout = setTimeout(() => {
       log.warn("job timed out", { job_id: job.job_id, timeout_ms: config.jobTimeoutMs });

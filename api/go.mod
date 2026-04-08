@@ -2,7 +2,7 @@ module sales-scrapper-backend/api
 
 go 1.26.1
 
-require github.com/shivanand-burli/go-starter-kit v0.2.2
+require github.com/shivanand-burli/go-starter-kit v0.2.3
 
 require (
 	github.com/andybalholm/brotli v1.2.1 // indirect

@@ -8,11 +8,14 @@ import { log } from "../utils/logger.js";
 export function listenForKill(
   redisHost: string,
   redisPort: number,
-  jobId: string
+  jobId: string,
+  redisUrl?: string,
 ): { controller: AbortController; cleanup: () => void } {
   const controller = new AbortController();
   const channel = `job_kill`;
-  const sub = new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
+  const sub = redisUrl
+    ? new Redis(redisUrl, { maxRetriesPerRequest: null })
+    : new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
 
   let cleaned = false;
 

@@ -30,8 +30,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/redis/go-redis/v9 v9.18.0 h1:pMkxYPkEbMPwRdenAzUNyFNrDgHx9U+DrBabWNfSRQs=
 github.com/redis/go-redis/v9 v9.18.0/go.mod h1:k3ufPphLU5YXwNTUcCRXGxUoF1fqxnhFQmscfkCoDA0=
-github.com/shivanand-burli/go-starter-kit v0.2.2 h1:eFpxdwDA7OvGPlxnyxOrC7OMqR2LImdy1yYkPv52Rek=
-github.com/shivanand-burli/go-starter-kit v0.2.2/go.mod h1:jSIniBRmbtyoIcwwE7m5WpLZkLrzX4OaSkpgYKNpocU=
+github.com/shivanand-burli/go-starter-kit v0.2.3 h1:x49696NgzYTzTMXQ9FIO+LrgsQM+oz9Q6Ud7SkPZY/Q=
+github.com/shivanand-burli/go-starter-kit v0.2.3/go.mod h1:jSIniBRmbtyoIcwwE7m5WpLZkLrzX4OaSkpgYKNpocU=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

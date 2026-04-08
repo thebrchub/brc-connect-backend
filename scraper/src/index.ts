@@ -8,11 +8,13 @@ async function main(): Promise<void> {
   log.info("starting scraper service");
 
   // 1. Connect Redis
-  const redis = new Redis({
-    host: config.redisHost,
-    port: config.redisPort,
-    maxRetriesPerRequest: null, // required for blocking commands
-  });
+  const redis = config.redisUrl
+    ? new Redis(config.redisUrl, { maxRetriesPerRequest: null })
+    : new Redis({
+        host: config.redisHost,
+        port: config.redisPort,
+        maxRetriesPerRequest: null,
+      });
 
   redis.on("error", (err: Error) => {
     log.error("redis connection error", { error: String(err) });
@@ -31,18 +33,15 @@ async function main(): Promise<void> {
   const runner = new Runner(redis, api);
 
   // Graceful shutdown
-  let shuttingDown = false;
   const shutdown = async (signal: string) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
     log.info(`${signal} received, shutting down`);
     runner.stop();
-    await redis.quit();
+    redis.disconnect();
     process.exit(0);
   };
 
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   await runner.start();
 }
