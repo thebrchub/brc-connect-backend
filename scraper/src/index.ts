@@ -21,8 +21,7 @@ async function main(): Promise<void> {
   });
 
   log.info("redis connected", {
-    host: config.redisHost,
-    port: config.redisPort,
+    target: config.redisUrl ? config.redisUrl.replace(/\/\/.*@/, "//***@") : `${config.redisHost}:${config.redisPort}`,
   });
 
   // 2. Authenticate with Go API
