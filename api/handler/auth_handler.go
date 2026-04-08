@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/subtle"
+	"log"
 	"net/http"
 
 	"github.com/shivanand-burli/go-starter-kit/helper"
@@ -55,6 +56,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"role": user.Role,
 	})
 	if err != nil {
+		log.Printf("ERROR [auth] - generate token failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to generate token")
 		return
 	}

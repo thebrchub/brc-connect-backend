@@ -72,6 +72,7 @@ func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Reque
 
 	campaign, err := h.campaignSvc.GetStatus(r.Context(), id)
 	if err != nil {
+		log.Printf("ERROR [campaign] - get status failed id=%s error=%s", id, err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch campaign")
 		return
 	}

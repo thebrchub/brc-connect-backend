@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -37,6 +38,7 @@ func (h *LeadHandler) GetLeads(w http.ResponseWriter, r *http.Request) {
 
 	leads, total, err := h.leadRepo.GetFiltered(r.Context(), city, status, source, scoreGTE, hasPhone, page, pageSize)
 	if err != nil {
+		log.Printf("ERROR [lead] - get filtered failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch leads")
 		return
 	}
@@ -54,6 +56,7 @@ func (h *LeadHandler) GetLead(w http.ResponseWriter, r *http.Request) {
 
 	lead, err := h.leadRepo.GetByID(r.Context(), id)
 	if err != nil {
+		log.Printf("ERROR [lead] - get by id failed id=%s error=%s", id, err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch lead")
 		return
 	}
@@ -75,6 +78,7 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 
 	existing, err := h.leadRepo.GetByID(r.Context(), id)
 	if err != nil {
+		log.Printf("ERROR [lead] - get by id for update failed id=%s error=%s", id, err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch lead")
 		return
 	}
@@ -103,6 +107,7 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.leadRepo.Update(r.Context(), *existing); err != nil {
+		log.Printf("ERROR [lead] - update failed id=%s error=%s", id, err)
 		helper.Error(w, http.StatusInternalServerError, "failed to update lead")
 		return
 	}
