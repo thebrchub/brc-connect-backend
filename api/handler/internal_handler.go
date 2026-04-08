@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -49,7 +50,7 @@ func (h *InternalHandler) LeadBatch(w http.ResponseWriter, r *http.Request) {
 	job, err := h.jobRepo.GetByID(r.Context(), req.JobID)
 	if err != nil {
 		log.Printf("ERROR [internal] - verify job failed job_id=%s error=%s", req.JobID, err)
-		helper.Error(w, http.StatusInternalServerError, "failed to verify job")
+		helper.Error(w, http.StatusInternalServerError, fmt.Sprintf("verify job: %s", err))
 		return
 	}
 	if job == nil {
@@ -78,7 +79,7 @@ func (h *InternalHandler) JobStatus(w http.ResponseWriter, r *http.Request) {
 	err := h.jobRepo.UpdateStatus(r.Context(), id, req.Status, req.LeadsFound, req.Error)
 	if err != nil {
 		log.Printf("ERROR [internal] - update job status failed job_id=%s status=%s error=%s", id, req.Status, err)
-		helper.Error(w, http.StatusInternalServerError, "failed to update job")
+		helper.Error(w, http.StatusInternalServerError, fmt.Sprintf("update status: %s", err))
 		return
 	}
 
