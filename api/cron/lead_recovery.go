@@ -156,6 +156,10 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 				if err := lr.campaignRepo.IncrementOnJobComplete(ctx, job.CampaignID, req.LeadsFound); err != nil {
 					log.Printf("ERROR [lead-recovery] - increment campaign counters failed error=%s", err)
 				}
+				// Mark campaign as completed if all jobs are done
+				if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
+					log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
+				}
 			}
 		}
 

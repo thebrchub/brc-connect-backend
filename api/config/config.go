@@ -30,10 +30,10 @@ type Config struct {
 	CBFailureThreshold int
 	CBOpenDurationSec  int
 
-	CacheLeadTTL     time.Duration
-	CacheCampaignTTL time.Duration
-	CacheFilterTTL   time.Duration
-	DrainBatchSize   int
+	CacheLeadTTL       time.Duration
+	CacheCampaignTTL   time.Duration
+	CacheFilterTTL     time.Duration
+	DrainBatchSize     int
 	ExportMaxRows      int
 	MemoryLimitMB      int
 	ShutdownTimeout    int
@@ -65,10 +65,10 @@ func Load() Config {
 		CBFailureThreshold: helper.GetEnvInt("CB_FAILURE_THRESHOLD", 5),
 		CBOpenDurationSec:  helper.GetEnvInt("CB_OPEN_DURATION_SEC", 10),
 
-		CacheLeadTTL:     time.Duration(helper.GetEnvInt("CACHE_LEAD_TTL_SEC", 300)) * time.Second,
-		CacheCampaignTTL: time.Duration(helper.GetEnvInt("CACHE_CAMPAIGN_TTL_SEC", 60)) * time.Second,
-		CacheFilterTTL:   time.Duration(helper.GetEnvInt("CACHE_FILTER_TTL_SEC", 30)) * time.Second,
-		DrainBatchSize:   helper.GetEnvInt("DRAIN_BATCH_SIZE", 100),
+		CacheLeadTTL:       time.Duration(helper.GetEnvInt("CACHE_LEAD_TTL_SEC", 300)) * time.Second,
+		CacheCampaignTTL:   time.Duration(helper.GetEnvInt("CACHE_CAMPAIGN_TTL_SEC", 60)) * time.Second,
+		CacheFilterTTL:     time.Duration(helper.GetEnvInt("CACHE_FILTER_TTL_SEC", 30)) * time.Second,
+		DrainBatchSize:     helper.GetEnvInt("DRAIN_BATCH_SIZE", 100),
 		ExportMaxRows:      helper.GetEnvInt("EXPORT_MAX_ROWS", 10000),
 		MemoryLimitMB:      helper.GetEnvInt("MEMORY_LIMIT_MB", 256),
 		ShutdownTimeout:    helper.GetEnvInt("SHUTDOWN_TIMEOUT_SEC", 15),

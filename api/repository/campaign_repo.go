@@ -126,6 +126,19 @@ func (r *CampaignRepo) GetAutoRescrape(ctx context.Context) ([]models.Campaign, 
 	return postgress.Query[models.Campaign](ctx, "SELECT * FROM campaigns WHERE auto_rescrape = true AND status = 'active'")
 }
 
+// MarkCompletedIfDone sets campaign status to 'completed' if all jobs are finished.
+func (r *CampaignRepo) MarkCompletedIfDone(ctx context.Context, id string) error {
+	_, err := postgress.Exec(ctx,
+		`UPDATE campaigns SET status = 'completed', updated_at = NOW()
+		 WHERE id = $1 AND status = 'active' AND jobs_completed >= jobs_total AND jobs_total > 0`,
+		id)
+	if err == nil {
+		redis.Remove(ctx, "campaign:"+id)
+		r.invalidateListCache(ctx)
+	}
+	return err
+}
+
 // CountTodayWithLeads returns the number of campaigns created today that have leads_found > 0
 // or are still active (not yet completed/timed out). Used to enforce daily creation limits.
 func (r *CampaignRepo) CountTodayWithLeads(ctx context.Context) (int, error) {
