@@ -50,9 +50,13 @@ export class YelpScraper extends BaseScraper {
       for (let i = 0; i < listings.length && !signal.aborted; i++) {
         const el = listings.eq(i);
 
-        const name = el.find("a[class*='businessName']").text().trim()
+        const nameLink = el.find("a[class*='businessName']");
+        const name = nameLink.text().trim()
           || el.find("h3 a, h4 a").first().text().trim();
         if (!name) continue;
+
+        const listingHref = nameLink.attr("href") || el.find("h3 a, h4 a").first().attr("href") || null;
+        const listingUrl = listingHref ? `https://www.yelp.com${listingHref}` : null;
 
         const phone = el.find('[class*="phone"]').text().trim() || null;
         const address = el.find("address, [class*='secondaryAttributes'] span").text().trim() || null;
@@ -77,6 +81,7 @@ export class YelpScraper extends BaseScraper {
           country: "US",
           category: job.category,
           source: this.source,
+          source_url: listingUrl,
           tech_stack: null,
           has_ssl: websiteUrl ? hasSSL(websiteUrl) : null,
           is_mobile_friendly: null,

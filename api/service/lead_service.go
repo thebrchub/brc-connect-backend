@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 
+	json "github.com/goccy/go-json"
+
 	"sales-scrapper-backend/api/models"
 	"sales-scrapper-backend/api/repository"
 )
@@ -63,7 +65,11 @@ func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads [
 
 		if existingID != "" {
 			// Merge sources into existing lead
-			err := s.leadRepo.MergeSources(ctx, existingID, []string{raw.Source})
+			srcURLs := map[string]string{}
+			if raw.SourceURL != nil && *raw.SourceURL != "" {
+				srcURLs[raw.Source] = *raw.SourceURL
+			}
+			err := s.leadRepo.MergeSources(ctx, existingID, []string{raw.Source}, srcURLs)
 			if err != nil {
 				log.Printf("ERROR [lead-service] - merge sources failed error=%s", err)
 			}
@@ -117,6 +123,14 @@ func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads [
 			HasSSL:           raw.HasSSL,
 			IsMobileFriendly: raw.IsMobileFriendly,
 			Status:           "new",
+		}
+
+		// Build source_urls
+		if raw.SourceURL != nil && *raw.SourceURL != "" {
+			srcURLs := map[string]string{raw.Source: *raw.SourceURL}
+			if b, err := json.Marshal(srcURLs); err == nil {
+				lead.SourceURLs = b
+			}
 		}
 
 		if phone != "" {

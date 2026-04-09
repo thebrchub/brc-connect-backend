@@ -110,16 +110,12 @@ func main() {
 
 	// Cron scheduler
 	watchdog := apicron.NewWatchdog(jobRepo, cfg)
-	rescrape := apicron.NewRescrape(campaignRepo, jobRepo, cfg)
 	emailVal := apicron.NewEmailValidator()
 	leadRecovery := apicron.NewLeadRecovery(leadSvc, jobRepo, campaignRepo, cfg.DrainBatchSize)
 
 	scheduler := cron.NewScheduler(cron.Config{})
 	scheduler.Register("watchdog", time.Duration(cfg.WatchdogIntervalSec)*time.Second, func(ctx context.Context) {
 		watchdog.Run(ctx)
-	})
-	scheduler.Register("rescrape", 24*time.Hour, func(ctx context.Context) {
-		rescrape.Run(ctx)
 	})
 	scheduler.Register("email_validator", 5*time.Minute, func(ctx context.Context) {
 		emailVal.Run(ctx)

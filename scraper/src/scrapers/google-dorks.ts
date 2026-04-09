@@ -156,6 +156,7 @@ export class GoogleDorksScraper extends BaseScraper {
         country: "US",
         category: job.category,
         source: this.source,
+        source_url: url,
         tech_stack: techStack,
         has_ssl: hasSSL(url),
         is_mobile_friendly: null,

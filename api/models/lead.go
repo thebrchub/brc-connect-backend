@@ -25,6 +25,7 @@ type Lead struct {
 	City             string          `db:"city" json:"city"`
 	Country          string          `db:"country" json:"country,omitempty"`
 	Source           []string        `db:"source" json:"source"`
+	SourceURLs       json.RawMessage `db:"source_urls" json:"source_urls,omitempty"`
 	LeadScore        int             `db:"lead_score" json:"lead_score"`
 	TechStack        json.RawMessage `db:"tech_stack" json:"tech_stack,omitempty"`
 	HasSSL           *bool           `db:"has_ssl" json:"has_ssl,omitempty"`
@@ -45,6 +46,7 @@ type RawLead struct {
 	Country          string          `json:"country"`
 	Category         string          `json:"category"`
 	Source           string          `json:"source"`
+	SourceURL        *string         `json:"source_url,omitempty"`
 	TechStack        json.RawMessage `json:"tech_stack,omitempty"`
 	HasSSL           *bool           `json:"has_ssl"`
 	IsMobileFriendly *bool           `json:"is_mobile_friendly"`

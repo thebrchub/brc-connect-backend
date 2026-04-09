@@ -115,6 +115,7 @@ export class RedditScraper extends BaseScraper {
             country: "US",
             category: job.category,
             source: this.source,
+            source_url: `https://reddit.com${permalink}`,
             tech_stack: null,
             has_ssl: null,
             is_mobile_friendly: null,

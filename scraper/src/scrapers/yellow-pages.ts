@@ -48,8 +48,12 @@ export class YellowPagesScraper extends BaseScraper {
       for (let i = 0; i < listings.length && !signal.aborted; i++) {
         const el = listings.eq(i);
 
-        const name = el.find(".business-name a, .n a").text().trim();
+        const nameLink = el.find(".business-name a, .n a");
+        const name = nameLink.text().trim();
         if (!name) continue;
+
+        const listingHref = nameLink.attr("href") || null;
+        const listingUrl = listingHref ? `https://www.yellowpages.com${listingHref}` : null;
 
         const phoneRaw = el.find(".phones, .phone").text().trim();
         const addressParts: string[] = [];
@@ -70,6 +74,7 @@ export class YellowPagesScraper extends BaseScraper {
           country: "US",
           category: job.category,
           source: this.source,
+          source_url: listingUrl,
           tech_stack: null,
           has_ssl: websiteUrl ? hasSSL(websiteUrl) : null,
           is_mobile_friendly: null,

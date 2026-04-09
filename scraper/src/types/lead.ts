@@ -9,6 +9,7 @@ export interface RawLead {
   country: string;
   category: string;
   source: string;
+  source_url?: string | null;
   tech_stack?: Record<string, string> | null;
   has_ssl?: boolean | null;
   is_mobile_friendly?: boolean | null;

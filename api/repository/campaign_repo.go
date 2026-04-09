@@ -62,7 +62,7 @@ func (r *CampaignRepo) GetAll(ctx context.Context, page, pageSize int) ([]models
 	result, err := redis.Fetch(ctx, cacheKey, r.listTTL, func(ctx context.Context) (*listResult, error) {
 		rows, err := postgress.Query[struct {
 			Count int `db:"count"`
-		}](ctx, "SELECT COUNT(*) FROM campaigns")
+		}](ctx, "SELECT COUNT(*) FROM campaigns WHERE created_at > NOW() - INTERVAL '24 hours'")
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func (r *CampaignRepo) GetAll(ctx context.Context, page, pageSize int) ([]models
 
 		offset := (page - 1) * pageSize
 		campaigns, err := postgress.Query[models.Campaign](ctx,
-			fmt.Sprintf("SELECT * FROM campaigns ORDER BY created_at DESC LIMIT %d OFFSET %d", pageSize, offset))
+			fmt.Sprintf("SELECT * FROM campaigns WHERE created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT %d OFFSET %d", pageSize, offset))
 		if err != nil {
 			return nil, err
 		}

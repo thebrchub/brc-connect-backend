@@ -92,6 +92,7 @@ export class LinkedInScraper extends BaseScraper {
           country: detectCountryFromCity(job.city),
           category: job.category,
           source: this.source,
+          source_url: link,
           tech_stack: null,
           has_ssl: true, // LinkedIn is always HTTPS
           is_mobile_friendly: null,

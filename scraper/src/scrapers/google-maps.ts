@@ -117,6 +117,9 @@ export class GoogleMapsScraper extends BaseScraper {
         const nameEl = item.getAttribute("aria-label");
         if (!nameEl) return;
 
+        // The listing URL is the href of the link itself
+        const sourceUrl = (item as HTMLAnchorElement).href ?? null;
+
         // Get the parent container for more info
         const container = item.closest('div[jsaction]');
         const text = container?.textContent ?? "";
@@ -152,6 +155,7 @@ export class GoogleMapsScraper extends BaseScraper {
           country: null, // detected by Go API from city
           category,
           source,
+          source_url: sourceUrl,
           tech_stack: null,
           has_ssl: websiteUrl ? websiteUrl.startsWith("https") : null,
           is_mobile_friendly: null,

@@ -133,6 +133,7 @@ export class CustomUrlsScraper extends BaseScraper {
       country: "US",
       category: job.category,
       source: this.source,
+      source_url: startUrl,
       tech_stack: techStack,
       has_ssl: hasSSL(startUrl),
       is_mobile_friendly: null,
