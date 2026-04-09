@@ -2,7 +2,9 @@ package cron
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"time"
 
 	json "github.com/goccy/go-json"
 
@@ -159,6 +161,14 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 				// Mark campaign as completed if all jobs are done
 				if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
 					log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
+				} else {
+					// If campaign completed with 0 leads, decrement the daily limit counter
+					campaign, cErr := lr.campaignRepo.GetByID(ctx, job.CampaignID)
+					if cErr == nil && campaign != nil && campaign.Status == "completed" && campaign.LeadsFound == 0 {
+						key := fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
+						redis.GetRawClient().Decr(ctx, key)
+						log.Printf("INFO  [lead-recovery] - zero-lead campaign, daily limit decremented campaign_id=%s", job.CampaignID)
+					}
 				}
 			}
 		}

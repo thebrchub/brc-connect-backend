@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	json "github.com/goccy/go-json"
 
@@ -30,15 +31,30 @@ func NewCampaignService(campaignRepo *repository.CampaignRepo, jobRepo *reposito
 // ErrDailyLimitReached is returned when the daily campaign creation limit is exceeded.
 var ErrDailyLimitReached = fmt.Errorf("daily campaign limit reached")
 
+// dailyLimitKey returns a Redis key scoped to today's UTC date.
+func dailyLimitKey() string {
+	return fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
+}
+
 // Create inserts a campaign, generates one job per source×city×category combination,
 // and enqueues all jobs to the scrape queue.
 func (s *CampaignService) Create(ctx context.Context, c models.Campaign) (*models.Campaign, error) {
-	// Enforce daily campaign limit
-	count, err := s.campaignRepo.CountTodayWithLeads(ctx)
+	// Atomic daily limit check via Redis INCR
+	rdb := redis.GetRawClient()
+	key := dailyLimitKey()
+
+	count, err := rdb.Incr(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("check daily limit: %w", err)
 	}
-	if count >= s.cfg.DailyCampaignLimit {
+	// Set expiry on first creation (key didn't exist before, INCR returns 1)
+	if count == 1 {
+		rdb.Expire(ctx, key, 25*time.Hour) // 25h to cover timezone edge cases
+	}
+
+	if count > int64(s.cfg.DailyCampaignLimit) {
+		// Roll back the increment since we're rejecting this request
+		rdb.Decr(ctx, key)
 		return nil, ErrDailyLimitReached
 	}
 
