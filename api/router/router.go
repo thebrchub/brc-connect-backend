@@ -53,6 +53,7 @@ func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandl
 	mux.HandleFunc("GET /crm/leads", middleware.Chain(crmH.GetCRMLeads, auth, employee))
 	mux.HandleFunc("GET /crm/leads/history", middleware.Chain(crmH.GetCRMHistory, auth, employee))
 	mux.HandleFunc("PATCH /crm/leads/{id}", middleware.Chain(crmH.UpdateCRMLead, auth, employee))
+	mux.HandleFunc("GET /crm/stats", middleware.Chain(crmH.GetMyStats, auth, employee))
 	mux.HandleFunc("POST /crm/heartbeat", middleware.Chain(crmH.Heartbeat, auth, employee))
 
 	// Admin CRM dashboard

@@ -96,6 +96,27 @@ func (h *CRMHandler) UpdateCRMLead(w http.ResponseWriter, r *http.Request) {
 	helper.JSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
+// GetMyStats handles GET /crm/stats — employee's own performance stats.
+func (h *CRMHandler) GetMyStats(w http.ResponseWriter, r *http.Request) {
+	employeeID := middleware.Subject(r.Context())
+
+	stats, err := h.activitySvc.GetEmployeeStats(r.Context(), employeeID)
+	if err != nil {
+		log.Printf("ERROR [crm] - get my stats failed error=%s", err)
+		helper.Error(w, http.StatusInternalServerError, "failed to fetch stats")
+		return
+	}
+	if stats == nil {
+		helper.JSON(w, http.StatusOK, map[string]int{
+			"total": 0, "pending": 0, "contacted": 0,
+			"interested": 0, "converted": 0, "rejected": 0,
+		})
+		return
+	}
+
+	helper.JSON(w, http.StatusOK, stats)
+}
+
 // Heartbeat handles POST /crm/heartbeat — employee session tracking.
 func (h *CRMHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	employeeID := middleware.Subject(r.Context())

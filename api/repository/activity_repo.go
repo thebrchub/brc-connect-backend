@@ -27,6 +27,7 @@ type CRMLeadView struct {
 	LeadID       string   `db:"lead_id" json:"lead_id"`
 	BusinessName string   `db:"business_name" json:"business_name"`
 	PhoneE164    *string  `db:"phone_e164" json:"phone_e164,omitempty"`
+	Email        *string  `db:"email" json:"email,omitempty"`
 	City         string   `db:"city" json:"city"`
 	Category     string   `db:"category" json:"category"`
 	WebsiteURL   *string  `db:"website_url" json:"website_url,omitempty"`
@@ -69,7 +70,7 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 
 		offset := (page - 1) * 20
 		leads, err := postgress.Query[CRMLeadView](ctx,
-			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.city, l.category,
+			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.email, l.city, l.category,
 				l.website_url, l.has_ssl, l.is_mobile_friendly, l.source,
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
@@ -114,7 +115,7 @@ func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, 
 
 		offset := (page - 1) * pageSize
 		leads, err := postgress.Query[CRMLeadView](ctx,
-			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.city, l.category,
+			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.email, l.city, l.category,
 				l.website_url, l.has_ssl, l.is_mobile_friendly, l.source,
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
@@ -291,7 +292,7 @@ func (r *ActivityRepo) GetEmployeeActivity(ctx context.Context, employeeID strin
 
 		offset := (page - 1) * pageSize
 		leads, err := postgress.Query[CRMLeadView](ctx,
-			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.city, l.category,
+			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.email, l.city, l.category,
 				l.website_url, l.has_ssl, l.is_mobile_friendly, l.source,
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
