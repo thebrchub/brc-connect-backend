@@ -11,7 +11,7 @@ import (
 	"github.com/shivanand-burli/go-starter-kit/postgress"
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/models"
+	"brc-connect-backend/api/models"
 )
 
 type LeadRepo struct {
@@ -210,4 +210,76 @@ func (r *LeadRepo) invalidateFilterCache(ctx context.Context) {
 	for iter.Next(ctx) {
 		client.Del(ctx, iter.Val())
 	}
+}
+
+// GetFilteredByAdmin returns leads scoped to an admin's campaigns (via scrape_jobs).
+func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status, source string, scoreGTE int, hasPhone bool, page, pageSize int) ([]models.Lead, int, error) {
+	cacheKey := fmt.Sprintf("leads:admin:%s:filter:%x", adminID, sha256.Sum256(
+		[]byte(fmt.Sprintf("%s|%s|%s|%d|%v|%d|%d", city, status, source, scoreGTE, hasPhone, page, pageSize)),
+	))
+
+	result, err := redis.Fetch(ctx, cacheKey, r.filterTTL, func(ctx context.Context) (*filteredResult, error) {
+		// Leads belong to admin via: leads inserted by scrape_jobs that belong to admin's campaigns
+		baseJoin := `FROM leads l
+			WHERE l.id IN (
+				SELECT DISTINCT l2.id FROM leads l2
+				JOIN scrape_jobs sj ON sj.campaign_id IN (SELECT id FROM campaigns WHERE admin_id = $1)
+			)`
+		args := []any{adminID}
+		argIdx := 2
+
+		where := ""
+		if city != "" {
+			where += fmt.Sprintf(" AND l.city = $%d", argIdx)
+			args = append(args, city)
+			argIdx++
+		}
+		if status != "" {
+			where += fmt.Sprintf(" AND l.status = $%d", argIdx)
+			args = append(args, status)
+			argIdx++
+		}
+		if source != "" {
+			where += fmt.Sprintf(" AND $%d = ANY(l.source)", argIdx)
+			args = append(args, source)
+			argIdx++
+		}
+		if scoreGTE > 0 {
+			where += fmt.Sprintf(" AND l.lead_score >= $%d", argIdx)
+			args = append(args, scoreGTE)
+			argIdx++
+		}
+		if hasPhone {
+			where += " AND l.phone_valid = true"
+		}
+
+		countSQL := "SELECT COUNT(*) " + baseJoin + where
+		rows, err := postgress.Query[struct {
+			Count int `db:"count"`
+		}](ctx, countSQL, args...)
+		if err != nil {
+			return nil, err
+		}
+		total := 0
+		if len(rows) > 0 {
+			total = rows[0].Count
+		}
+
+		offset := (page - 1) * pageSize
+		dataSQL := fmt.Sprintf("SELECT l.* %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
+			baseJoin, where, argIdx, argIdx+1)
+		args = append(args, pageSize, offset)
+		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)
+		if err != nil {
+			return nil, err
+		}
+		return &filteredResult{Leads: leads, Total: total}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if result == nil {
+		return nil, 0, nil
+	}
+	return result.Leads, result.Total, nil
 }

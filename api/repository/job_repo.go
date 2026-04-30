@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shivanand-burli/go-starter-kit/postgress"
 
-	"sales-scrapper-backend/api/models"
+	"brc-connect-backend/api/models"
 )
 
 type JobRepo struct{}

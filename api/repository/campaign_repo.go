@@ -9,7 +9,7 @@ import (
 	"github.com/shivanand-burli/go-starter-kit/postgress"
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/models"
+	"brc-connect-backend/api/models"
 )
 
 type CampaignRepo struct {
@@ -24,9 +24,9 @@ func NewCampaignRepo(campaignTTL, listTTL time.Duration) *CampaignRepo {
 func (r *CampaignRepo) Insert(ctx context.Context, c models.Campaign) (string, error) {
 	c.ID = uuid.NewString()
 	_, err := postgress.Exec(ctx,
-		`INSERT INTO campaigns (id, name, sources, cities, categories, status, auto_rescrape, drop_no_contact, jobs_total, jobs_completed, leads_found, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())`,
-		c.ID, c.Name, c.Sources, c.Cities, c.Categories, c.Status, c.AutoRescrape, c.DropNoContact, c.JobsTotal, c.JobsCompleted, c.LeadsFound)
+		`INSERT INTO campaigns (id, name, sources, cities, categories, status, auto_rescrape, drop_no_contact, jobs_total, jobs_completed, leads_found, admin_id, assigned_to, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())`,
+		c.ID, c.Name, c.Sources, c.Cities, c.Categories, c.Status, c.AutoRescrape, c.DropNoContact, c.JobsTotal, c.JobsCompleted, c.LeadsFound, c.AdminID, c.AssignedTo)
 	if err == nil {
 		r.invalidateListCache(ctx)
 	}
@@ -156,11 +156,90 @@ func (r *CampaignRepo) CountTodayWithLeads(ctx context.Context) (int, error) {
 	return rows[0].Count, nil
 }
 
+func (r *CampaignRepo) GetByAdmin(ctx context.Context, adminID string, page, pageSize int) ([]models.Campaign, int, error) {
+	cacheKey := fmt.Sprintf("campaigns:admin:%s:%d:%d", adminID, page, pageSize)
+
+	type listResult struct {
+		Campaigns []models.Campaign `json:"campaigns"`
+		Total     int               `json:"total"`
+	}
+
+	result, err := redis.Fetch(ctx, cacheKey, r.listTTL, func(ctx context.Context) (*listResult, error) {
+		rows, err := postgress.Query[struct {
+			Count int `db:"count"`
+		}](ctx, "SELECT COUNT(*) AS count FROM campaigns WHERE admin_id = $1", adminID)
+		if err != nil {
+			return nil, err
+		}
+		total := 0
+		if len(rows) > 0 {
+			total = rows[0].Count
+		}
+
+		offset := (page - 1) * pageSize
+		campaigns, err := postgress.Query[models.Campaign](ctx,
+			"SELECT * FROM campaigns WHERE admin_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+			adminID, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		return &listResult{Campaigns: campaigns, Total: total}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if result == nil {
+		return nil, 0, nil
+	}
+	return result.Campaigns, result.Total, nil
+}
+
+func (r *CampaignRepo) GetByEmployee(ctx context.Context, employeeID string, page, pageSize int) ([]models.Campaign, int, error) {
+	cacheKey := fmt.Sprintf("campaigns:employee:%s:%d:%d", employeeID, page, pageSize)
+
+	type listResult struct {
+		Campaigns []models.Campaign `json:"campaigns"`
+		Total     int               `json:"total"`
+	}
+
+	result, err := redis.Fetch(ctx, cacheKey, r.listTTL, func(ctx context.Context) (*listResult, error) {
+		rows, err := postgress.Query[struct {
+			Count int `db:"count"`
+		}](ctx, "SELECT COUNT(*) AS count FROM campaigns WHERE assigned_to = $1", employeeID)
+		if err != nil {
+			return nil, err
+		}
+		total := 0
+		if len(rows) > 0 {
+			total = rows[0].Count
+		}
+
+		offset := (page - 1) * pageSize
+		campaigns, err := postgress.Query[models.Campaign](ctx,
+			"SELECT * FROM campaigns WHERE assigned_to = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+			employeeID, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		return &listResult{Campaigns: campaigns, Total: total}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if result == nil {
+		return nil, 0, nil
+	}
+	return result.Campaigns, result.Total, nil
+}
+
 // invalidateListCache removes all cached campaign list pages.
 func (r *CampaignRepo) invalidateListCache(ctx context.Context) {
 	client := redis.GetRawClient()
-	iter := client.Scan(ctx, 0, "sales:campaigns:list:*", 100).Iterator()
-	for iter.Next(ctx) {
-		client.Del(ctx, iter.Val())
+	patterns := []string{"sales:campaigns:list:*", "sales:campaigns:admin:*", "sales:campaigns:employee:*"}
+	for _, p := range patterns {
+		iter := client.Scan(ctx, 0, p, 100).Iterator()
+		for iter.Next(ctx) {
+			client.Del(ctx, iter.Val())
+		}
 	}
 }

@@ -9,9 +9,9 @@ import (
 
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/config"
-	"sales-scrapper-backend/api/models"
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/config"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/repository"
 )
 
 type CampaignService struct {
@@ -124,4 +124,14 @@ func (s *CampaignService) GetStatus(ctx context.Context, id string) (*models.Cam
 // GetAll returns paginated campaigns.
 func (s *CampaignService) GetAll(ctx context.Context, page, pageSize int) ([]models.Campaign, int, error) {
 	return s.campaignRepo.GetAll(ctx, page, pageSize)
+}
+
+// GetByAdmin returns paginated campaigns scoped to an admin.
+func (s *CampaignService) GetByAdmin(ctx context.Context, adminID string, page, pageSize int) ([]models.Campaign, int, error) {
+	return s.campaignRepo.GetByAdmin(ctx, adminID, page, pageSize)
+}
+
+// GetByEmployee returns paginated campaigns assigned to an employee.
+func (s *CampaignService) GetByEmployee(ctx context.Context, employeeID string, page, pageSize int) ([]models.Campaign, int, error) {
+	return s.campaignRepo.GetByEmployee(ctx, employeeID, page, pageSize)
 }

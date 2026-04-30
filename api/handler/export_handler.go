@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/repository"
 )
 
 type ExportHandler struct {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/shivanand-burli/go-starter-kit/postgress"
 
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/repository"
 )
 
 type DedupService struct {

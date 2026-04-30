@@ -7,7 +7,7 @@ import (
 	"github.com/shivanand-burli/go-starter-kit/postgress"
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/service"
+	"brc-connect-backend/api/service"
 )
 
 // EmailValidator runs as a cron job to perform heavy MX/SMTP validation

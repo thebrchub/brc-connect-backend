@@ -6,8 +6,10 @@ import (
 	"strconv"
 
 	"github.com/shivanand-burli/go-starter-kit/helper"
+	"github.com/shivanand-burli/go-starter-kit/middleware"
 
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/repository"
 )
 
 type LeadHandler struct {
@@ -18,8 +20,11 @@ func NewLeadHandler(leadRepo *repository.LeadRepo) *LeadHandler {
 	return &LeadHandler{leadRepo: leadRepo}
 }
 
-// GetLeads handles GET /leads with filtering and pagination.
+// GetLeads handles GET /leads with filtering and pagination — scoped by role.
 func (h *LeadHandler) GetLeads(w http.ResponseWriter, r *http.Request) {
+	role := middleware.Role(r.Context())
+	userID := middleware.Subject(r.Context())
+
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	if page < 1 {
@@ -36,7 +41,20 @@ func (h *LeadHandler) GetLeads(w http.ResponseWriter, r *http.Request) {
 	scoreGTE, _ := strconv.Atoi(q.Get("score_gte"))
 	hasPhone := q.Get("has_phone") == "true"
 
-	leads, total, err := h.leadRepo.GetFiltered(r.Context(), city, status, source, scoreGTE, hasPhone, page, pageSize)
+	var leads []models.Lead
+	var total int
+	var err error
+
+	switch role {
+	case "super_admin":
+		leads, total, err = h.leadRepo.GetFiltered(r.Context(), city, status, source, scoreGTE, hasPhone, page, pageSize)
+	case "admin":
+		leads, total, err = h.leadRepo.GetFilteredByAdmin(r.Context(), userID, city, status, source, scoreGTE, hasPhone, page, pageSize)
+	default:
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	if err != nil {
 		log.Printf("ERROR [lead] - get filtered failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch leads")

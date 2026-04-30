@@ -8,9 +8,9 @@ import (
 
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/config"
-	"sales-scrapper-backend/api/models"
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/config"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/repository"
 )
 
 type Rescrape struct {

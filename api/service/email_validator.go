@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"sales-scrapper-backend/api/data"
+	"brc-connect-backend/api/data"
 )
 
 var emailRe = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)

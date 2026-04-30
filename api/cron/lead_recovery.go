@@ -10,9 +10,9 @@ import (
 
 	"github.com/shivanand-burli/go-starter-kit/redis"
 
-	"sales-scrapper-backend/api/models"
-	"sales-scrapper-backend/api/repository"
-	"sales-scrapper-backend/api/service"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/repository"
+	"brc-connect-backend/api/service"
 )
 
 const maxRetryAttempts = 3

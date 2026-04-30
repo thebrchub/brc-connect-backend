@@ -14,6 +14,8 @@ type Campaign struct {
 	JobsTotal     int       `db:"jobs_total" json:"jobs_total"`
 	JobsCompleted int       `db:"jobs_completed" json:"jobs_completed"`
 	LeadsFound    int       `db:"leads_found" json:"leads_found"`
+	AdminID       *string   `db:"admin_id" json:"admin_id"`
+	AssignedTo    *string   `db:"assigned_to" json:"assigned_to"`
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 }

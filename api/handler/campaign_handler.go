@@ -7,9 +7,10 @@ import (
 	"strconv"
 
 	"github.com/shivanand-burli/go-starter-kit/helper"
+	"github.com/shivanand-burli/go-starter-kit/middleware"
 
-	"sales-scrapper-backend/api/models"
-	"sales-scrapper-backend/api/service"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/service"
 )
 
 type CampaignHandler struct {
@@ -22,6 +23,8 @@ func NewCampaignHandler(campaignSvc *service.CampaignService) *CampaignHandler {
 
 // CreateCampaign handles POST /campaigns.
 func (h *CampaignHandler) CreateCampaign(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.Subject(r.Context())
+
 	var c models.Campaign
 	if err := helper.ReadJSON(r, &c); err != nil {
 		helper.Error(w, http.StatusBadRequest, "invalid json body")
@@ -53,6 +56,8 @@ func (h *CampaignHandler) CreateCampaign(w http.ResponseWriter, r *http.Request)
 		helper.Error(w, http.StatusBadRequest, "total job combinations (sources × cities × categories) cannot exceed 10000")
 		return
 	}
+
+	c.AdminID = &adminID
 
 	campaign, err := h.campaignSvc.Create(r.Context(), c)
 	if err != nil {
@@ -90,8 +95,10 @@ func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Reque
 	helper.JSON(w, http.StatusOK, campaign)
 }
 
-// GetCampaigns handles GET /campaigns — paginated list.
+// GetCampaigns handles GET /campaigns — role-scoped paginated list.
 func (h *CampaignHandler) GetCampaigns(w http.ResponseWriter, r *http.Request) {
+	role := middleware.Role(r.Context())
+	userID := middleware.Subject(r.Context())
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	if page < 1 {
@@ -102,7 +109,22 @@ func (h *CampaignHandler) GetCampaigns(w http.ResponseWriter, r *http.Request) {
 		pageSize = 20
 	}
 
-	campaigns, total, err := h.campaignSvc.GetAll(r.Context(), page, pageSize)
+	var campaigns []models.Campaign
+	var total int
+	var err error
+
+	switch role {
+	case "super_admin":
+		campaigns, total, err = h.campaignSvc.GetAll(r.Context(), page, pageSize)
+	case "admin":
+		campaigns, total, err = h.campaignSvc.GetByAdmin(r.Context(), userID, page, pageSize)
+	case "employee":
+		campaigns, total, err = h.campaignSvc.GetByEmployee(r.Context(), userID, page, pageSize)
+	default:
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	if err != nil {
 		log.Printf("ERROR [campaign] - list failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch campaigns")

@@ -8,8 +8,8 @@ import (
 
 	json "github.com/goccy/go-json"
 
-	"sales-scrapper-backend/api/models"
-	"sales-scrapper-backend/api/repository"
+	"brc-connect-backend/api/models"
+	"brc-connect-backend/api/repository"
 )
 
 type LeadService struct {

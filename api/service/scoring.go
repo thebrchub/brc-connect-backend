@@ -2,7 +2,7 @@ package service
 
 import (
 	"encoding/json"
-	"sales-scrapper-backend/api/models"
+	"brc-connect-backend/api/models"
 	"strings"
 )
 
