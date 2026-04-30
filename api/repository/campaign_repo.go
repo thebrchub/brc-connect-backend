@@ -243,3 +243,14 @@ func (r *CampaignRepo) invalidateListCache(ctx context.Context) {
 		}
 	}
 }
+
+// AssignEmployee sets assigned_to on a campaign.
+func (r *CampaignRepo) AssignEmployee(ctx context.Context, campaignID, employeeID string) error {
+	_, err := postgress.Exec(ctx, "UPDATE campaigns SET assigned_to = $1, updated_at = NOW() WHERE id = $2", employeeID, campaignID)
+	if err != nil {
+		return err
+	}
+	r.invalidateListCache(ctx)
+	redis.Remove(ctx, fmt.Sprintf("sales:campaign:%s", campaignID))
+	return nil
+}

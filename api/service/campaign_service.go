@@ -135,3 +135,8 @@ func (s *CampaignService) GetByAdmin(ctx context.Context, adminID string, page, 
 func (s *CampaignService) GetByEmployee(ctx context.Context, employeeID string, page, pageSize int) ([]models.Campaign, int, error) {
 	return s.campaignRepo.GetByEmployee(ctx, employeeID, page, pageSize)
 }
+
+// AssignEmployee sets the assigned_to field on a campaign.
+func (s *CampaignService) AssignEmployee(ctx context.Context, campaignID, employeeID string) error {
+	return s.campaignRepo.AssignEmployee(ctx, campaignID, employeeID)
+}

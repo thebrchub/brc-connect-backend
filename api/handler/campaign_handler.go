@@ -133,3 +133,32 @@ func (h *CampaignHandler) GetCampaigns(w http.ResponseWriter, r *http.Request) {
 
 	helper.Paginated(w, campaigns, page, pageSize, total)
 }
+
+// AssignCampaign handles PATCH /campaigns/{id}/assign — admin assigns campaign to employee.
+func (h *CampaignHandler) AssignCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		helper.Error(w, http.StatusBadRequest, "missing campaign id")
+		return
+	}
+
+	var req struct {
+		EmployeeID string `json:"employee_id"`
+	}
+	if err := helper.ReadJSON(r, &req); err != nil {
+		helper.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if req.EmployeeID == "" {
+		helper.Error(w, http.StatusBadRequest, "employee_id is required")
+		return
+	}
+
+	if err := h.campaignSvc.AssignEmployee(r.Context(), id, req.EmployeeID); err != nil {
+		log.Printf("ERROR [campaign] - assign failed id=%s error=%s", id, err)
+		helper.Error(w, http.StatusInternalServerError, "assign failed")
+		return
+	}
+
+	helper.JSON(w, http.StatusOK, map[string]string{"status": "assigned"})
+}
