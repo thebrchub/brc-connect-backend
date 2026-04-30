@@ -26,7 +26,7 @@ func NewLeadRepo(leadTTL, filterTTL time.Duration) *LeadRepo {
 func (r *LeadRepo) Insert(ctx context.Context, lead models.Lead) (string, error) {
 	lead.ID = uuid.NewString()
 	_, err := postgress.Exec(ctx, leadInsertSQL,
-		lead.ID, lead.BusinessName, lead.Category, lead.PhoneE164, lead.PhoneValid, lead.PhoneType, lead.PhoneConfidence,
+		lead.ID, lead.AdminID, lead.BusinessName, lead.Category, lead.PhoneE164, lead.PhoneValid, lead.PhoneType, lead.PhoneConfidence,
 		lead.Email, lead.EmailValid, lead.EmailCatchall, lead.EmailDisposable, lead.EmailConfidence,
 		lead.WebsiteURL, lead.WebsiteDomain, lead.Address, lead.City, lead.Country, lead.Source, lead.SourceURLs,
 		lead.LeadScore, lead.TechStack, lead.HasSSL, lead.IsMobileFriendly, lead.Status)
@@ -40,7 +40,7 @@ func (r *LeadRepo) InsertBatch(ctx context.Context, leads []models.Lead) error {
 	for i := range leads {
 		leads[i].ID = uuid.NewString()
 		_, err := postgress.Exec(ctx, leadInsertSQL,
-			leads[i].ID, leads[i].BusinessName, leads[i].Category, leads[i].PhoneE164, leads[i].PhoneValid, leads[i].PhoneType, leads[i].PhoneConfidence,
+			leads[i].ID, leads[i].AdminID, leads[i].BusinessName, leads[i].Category, leads[i].PhoneE164, leads[i].PhoneValid, leads[i].PhoneType, leads[i].PhoneConfidence,
 			leads[i].Email, leads[i].EmailValid, leads[i].EmailCatchall, leads[i].EmailDisposable, leads[i].EmailConfidence,
 			leads[i].WebsiteURL, leads[i].WebsiteDomain, leads[i].Address, leads[i].City, leads[i].Country, leads[i].Source, leads[i].SourceURLs,
 			leads[i].LeadScore, leads[i].TechStack, leads[i].HasSSL, leads[i].IsMobileFriendly, leads[i].Status)
@@ -53,11 +53,11 @@ func (r *LeadRepo) InsertBatch(ctx context.Context, leads []models.Lead) error {
 }
 
 const leadInsertSQL = `INSERT INTO leads (
-	id, business_name, category, phone_e164, phone_valid, phone_type, phone_confidence,
+	id, admin_id, business_name, category, phone_e164, phone_valid, phone_type, phone_confidence,
 	email, email_valid, email_catchall, email_disposable, email_confidence,
 	website_url, website_domain, address, city, country, source, source_urls,
 	lead_score, tech_stack, has_ssl, is_mobile_friendly, status, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW(),NOW())`
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW(),NOW())`
 
 func (r *LeadRepo) GetByID(ctx context.Context, id string) (*models.Lead, error) {
 	lead, err := redis.Fetch(ctx, "lead:"+id, r.leadTTL, func(ctx context.Context) (*models.Lead, error) {
@@ -212,19 +212,14 @@ func (r *LeadRepo) invalidateFilterCache(ctx context.Context) {
 	}
 }
 
-// GetFilteredByAdmin returns leads scoped to an admin's campaigns (via scrape_jobs).
+// GetFilteredByAdmin returns leads scoped to an admin via admin_id column.
 func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status, source string, scoreGTE int, hasPhone bool, page, pageSize int) ([]models.Lead, int, error) {
 	cacheKey := fmt.Sprintf("leads:admin:%s:filter:%x", adminID, sha256.Sum256(
 		[]byte(fmt.Sprintf("%s|%s|%s|%d|%v|%d|%d", city, status, source, scoreGTE, hasPhone, page, pageSize)),
 	))
 
 	result, err := redis.Fetch(ctx, cacheKey, r.filterTTL, func(ctx context.Context) (*filteredResult, error) {
-		// Leads belong to admin via: leads inserted by scrape_jobs that belong to admin's campaigns
-		baseJoin := `FROM leads l
-			WHERE l.id IN (
-				SELECT DISTINCT l2.id FROM leads l2
-				JOIN scrape_jobs sj ON sj.campaign_id IN (SELECT id FROM campaigns WHERE admin_id = $1)
-			)`
+		baseJoin := `FROM leads l WHERE l.admin_id = $1`
 		args := []any{adminID}
 		argIdx := 2
 

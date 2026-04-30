@@ -182,13 +182,20 @@ func (r *ActivityRepo) UpdateActivity(ctx context.Context, id string, updates ma
 	return nil
 }
 
-// PopulateForCampaign bulk-inserts lead_activities for all leads, assigning them to an employee under a campaign.
+// PopulateForCampaign bulk-inserts lead_activities for leads belonging to a campaign's admin, scoped by city+category.
 func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, campaignID string) error {
 	_, err := postgress.Exec(ctx,
 		`INSERT INTO lead_activities (id, lead_id, employee_id, campaign_id, status, created_at, updated_at)
 		 SELECT gen_random_uuid(), l.id, $1, $2, 'pending', NOW(), NOW()
 		 FROM leads l
-		 WHERE NOT EXISTS (
+		 WHERE l.admin_id = (SELECT admin_id FROM campaigns WHERE id = $2)
+		 AND EXISTS (
+			SELECT 1 FROM scrape_jobs sj
+			WHERE sj.campaign_id = $2
+			AND LOWER(l.city) = LOWER(sj.city)
+			AND LOWER(l.category) = LOWER(sj.category)
+		 )
+		 AND NOT EXISTS (
 			SELECT 1 FROM lead_activities la WHERE la.lead_id = l.id AND la.campaign_id = $2
 		 )`, employeeID, campaignID)
 	if err != nil {

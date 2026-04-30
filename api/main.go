@@ -98,7 +98,7 @@ func main() {
 	sessionRepo := repository.NewSessionRepo()
 
 	// Services
-	leadSvc := service.NewLeadService(leadRepo, campaignRepo)
+	leadSvc := service.NewLeadService(leadRepo, campaignRepo, jobRepo)
 	campaignSvc := service.NewCampaignService(campaignRepo, jobRepo, activityRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
 	activitySvc := service.NewActivityService(activityRepo, campaignRepo)

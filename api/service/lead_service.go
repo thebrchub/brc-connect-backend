@@ -15,19 +15,31 @@ import (
 type LeadService struct {
 	leadRepo     *repository.LeadRepo
 	campaignRepo *repository.CampaignRepo
+	jobRepo      *repository.JobRepo
 	dedup        *DedupService
 }
 
-func NewLeadService(leadRepo *repository.LeadRepo, campaignRepo *repository.CampaignRepo) *LeadService {
+func NewLeadService(leadRepo *repository.LeadRepo, campaignRepo *repository.CampaignRepo, jobRepo *repository.JobRepo) *LeadService {
 	return &LeadService{
 		leadRepo:     leadRepo,
 		campaignRepo: campaignRepo,
+		jobRepo:      jobRepo,
 		dedup:        NewDedupService(leadRepo),
 	}
 }
 
 // ProcessBatch takes raw leads from Node.js, validates, deduplicates, scores, and inserts them.
 func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads []models.RawLead) models.LeadBatchResponse {
+	// Resolve admin_id from job → campaign → admin
+	var adminID *string
+	job, err := s.jobRepo.GetByID(ctx, jobID)
+	if err == nil && job != nil {
+		campaign, cErr := s.campaignRepo.GetByID(ctx, job.CampaignID)
+		if cErr == nil && campaign != nil && campaign.AdminID != nil {
+			adminID = campaign.AdminID
+		}
+	}
+
 	toInsert := make([]models.Lead, 0, len(rawLeads))
 	inserted, merged, skipped := 0, 0, 0
 
@@ -107,6 +119,7 @@ func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads [
 		score := ScoreCalculate(raw, nil)
 
 		lead := models.Lead{
+			AdminID:          adminID,
 			BusinessName:     raw.BusinessName,
 			Category:         raw.Category,
 			PhoneValid:       phoneValid,

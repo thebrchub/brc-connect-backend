@@ -83,6 +83,14 @@ func (h *LeadHandler) GetLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Admin can only see their own leads
+	role := middleware.Role(r.Context())
+	userID := middleware.Subject(r.Context())
+	if role == "admin" && (lead.AdminID == nil || *lead.AdminID != userID) {
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	helper.JSON(w, http.StatusOK, lead)
 }
 
@@ -102,6 +110,14 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		helper.Error(w, http.StatusNotFound, "lead not found")
+		return
+	}
+
+	// Admin can only update their own leads
+	role := middleware.Role(r.Context())
+	userID := middleware.Subject(r.Context())
+	if role == "admin" && (existing.AdminID == nil || *existing.AdminID != userID) {
+		helper.Error(w, http.StatusForbidden, "access denied")
 		return
 	}
 

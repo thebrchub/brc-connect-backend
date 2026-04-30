@@ -8,6 +8,7 @@ import (
 
 type Lead struct {
 	ID               string          `db:"id" json:"id"`
+	AdminID          *string         `db:"admin_id" json:"admin_id,omitempty"`
 	BusinessName     string          `db:"business_name" json:"business_name"`
 	Category         string          `db:"category" json:"category,omitempty"`
 	PhoneE164        *string         `db:"phone_e164" json:"phone_e164,omitempty"`
