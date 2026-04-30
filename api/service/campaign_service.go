@@ -17,13 +17,15 @@ import (
 type CampaignService struct {
 	campaignRepo *repository.CampaignRepo
 	jobRepo      *repository.JobRepo
+	activityRepo *repository.ActivityRepo
 	cfg          config.Config
 }
 
-func NewCampaignService(campaignRepo *repository.CampaignRepo, jobRepo *repository.JobRepo, cfg config.Config) *CampaignService {
+func NewCampaignService(campaignRepo *repository.CampaignRepo, jobRepo *repository.JobRepo, activityRepo *repository.ActivityRepo, cfg config.Config) *CampaignService {
 	return &CampaignService{
 		campaignRepo: campaignRepo,
 		jobRepo:      jobRepo,
+		activityRepo: activityRepo,
 		cfg:          cfg,
 	}
 }
@@ -136,7 +138,10 @@ func (s *CampaignService) GetByEmployee(ctx context.Context, employeeID string, 
 	return s.campaignRepo.GetByEmployee(ctx, employeeID, page, pageSize)
 }
 
-// AssignEmployee sets the assigned_to field on a campaign.
+// AssignEmployee sets the assigned_to field on a campaign and populates lead_activities.
 func (s *CampaignService) AssignEmployee(ctx context.Context, campaignID, employeeID string) error {
-	return s.campaignRepo.AssignEmployee(ctx, campaignID, employeeID)
+	if err := s.campaignRepo.AssignEmployee(ctx, campaignID, employeeID); err != nil {
+		return err
+	}
+	return s.activityRepo.PopulateForCampaign(ctx, employeeID, campaignID)
 }

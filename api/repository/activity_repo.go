@@ -182,6 +182,22 @@ func (r *ActivityRepo) UpdateActivity(ctx context.Context, id string, updates ma
 	return nil
 }
 
+// PopulateForCampaign bulk-inserts lead_activities for all leads, assigning them to an employee under a campaign.
+func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, campaignID string) error {
+	_, err := postgress.Exec(ctx,
+		`INSERT INTO lead_activities (id, lead_id, employee_id, campaign_id, status, created_at, updated_at)
+		 SELECT gen_random_uuid(), l.id, $1, $2, 'pending', NOW(), NOW()
+		 FROM leads l
+		 WHERE NOT EXISTS (
+			SELECT 1 FROM lead_activities la WHERE la.lead_id = l.id AND la.campaign_id = $2
+		 )`, employeeID, campaignID)
+	if err != nil {
+		return err
+	}
+	r.invalidateEmployeeCache(ctx, employeeID)
+	return nil
+}
+
 // InsertBatch creates lead_activity rows for a batch of leads assigned to an employee.
 func (r *ActivityRepo) InsertBatch(ctx context.Context, employeeID, campaignID string, leadIDs []string) error {
 	for _, leadID := range leadIDs {
