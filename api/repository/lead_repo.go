@@ -61,15 +61,20 @@ const leadInsertSQL = `INSERT INTO leads (
 
 func (r *LeadRepo) GetByID(ctx context.Context, id string) (*models.Lead, error) {
 	lead, err := redis.Fetch(ctx, "lead:"+id, r.leadTTL, func(ctx context.Context) (*models.Lead, error) {
-		var l models.Lead
-		found, err := postgress.Get(ctx, "leads", id, &l)
+		rows, err := postgress.Query[models.LeadWithAssignment](ctx,
+			`SELECT l.*, u.name AS assigned_to_name
+			 FROM leads l
+			 LEFT JOIN users u ON u.id = l.assigned_to
+			 WHERE l.id = $1`, id)
 		if err != nil {
 			return nil, err
 		}
-		if !found {
+		if len(rows) == 0 {
 			return nil, nil
 		}
-		return &l, nil
+		result := rows[0].Lead
+		result.AssignedToName = rows[0].AssignedToName
+		return &result, nil
 	})
 	if err != nil {
 		return nil, err
@@ -93,30 +98,30 @@ func (r *LeadRepo) GetFiltered(ctx context.Context, city, status, source string,
 		argIdx := 1
 
 		if city != "" {
-			where += fmt.Sprintf(" AND city = $%d", argIdx)
+			where += fmt.Sprintf(" AND l.city = $%d", argIdx)
 			args = append(args, city)
 			argIdx++
 		}
 		if status != "" {
-			where += fmt.Sprintf(" AND status = $%d", argIdx)
+			where += fmt.Sprintf(" AND l.status = $%d", argIdx)
 			args = append(args, status)
 			argIdx++
 		}
 		if source != "" {
-			where += fmt.Sprintf(" AND $%d = ANY(source)", argIdx)
+			where += fmt.Sprintf(" AND $%d = ANY(l.source)", argIdx)
 			args = append(args, source)
 			argIdx++
 		}
 		if scoreGTE > 0 {
-			where += fmt.Sprintf(" AND lead_score >= $%d", argIdx)
+			where += fmt.Sprintf(" AND l.lead_score >= $%d", argIdx)
 			args = append(args, scoreGTE)
 			argIdx++
 		}
 		if hasPhone {
-			where += " AND phone_valid = true"
+			where += " AND l.phone_valid = true"
 		}
 
-		countSQL := "SELECT COUNT(*) FROM leads WHERE " + where
+		countSQL := "SELECT COUNT(*) FROM leads l WHERE " + where
 		rows, err := postgress.Query[struct {
 			Count int `db:"count"`
 		}](ctx, countSQL, args...)
@@ -129,11 +134,16 @@ func (r *LeadRepo) GetFiltered(ctx context.Context, city, status, source string,
 		}
 
 		offset := (page - 1) * pageSize
-		dataSQL := fmt.Sprintf("SELECT * FROM leads WHERE %s ORDER BY (status = 'new') DESC, lead_score DESC, created_at DESC LIMIT $%d OFFSET $%d", where, argIdx, argIdx+1)
+		dataSQL := fmt.Sprintf("SELECT l.*, u.name AS assigned_to_name FROM leads l LEFT JOIN users u ON u.id = l.assigned_to WHERE %s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d", where, argIdx, argIdx+1)
 		args = append(args, pageSize, offset)
-		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)
+		dataRows, err := postgress.Query[models.LeadWithAssignment](ctx, dataSQL, args...)
 		if err != nil {
 			return nil, err
+		}
+		leads := make([]models.Lead, len(dataRows))
+		for i, r := range dataRows {
+			leads[i] = r.Lead
+			leads[i].AssignedToName = r.AssignedToName
 		}
 		return &filteredResult{Leads: leads, Total: total}, nil
 	})
@@ -313,9 +323,14 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 		dataSQL := fmt.Sprintf("SELECT l.*, u.name AS assigned_to_name %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
 			baseJoin, where, argIdx, argIdx+1)
 		args = append(args, pageSize, offset)
-		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)
+		joinRows, err := postgress.Query[models.LeadWithAssignment](ctx, dataSQL, args...)
 		if err != nil {
 			return nil, err
+		}
+		leads := make([]models.Lead, len(joinRows))
+		for i, r := range joinRows {
+			leads[i] = r.Lead
+			leads[i].AssignedToName = r.AssignedToName
 		}
 		return &filteredResult{Leads: leads, Total: total}, nil
 	})

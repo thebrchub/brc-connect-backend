@@ -33,9 +33,15 @@ type Lead struct {
 	IsMobileFriendly *bool           `db:"is_mobile_friendly" json:"is_mobile_friendly,omitempty"`
 	Status           string          `db:"status" json:"status"`
 	AssignedTo       *string         `db:"assigned_to" json:"assigned_to,omitempty"`
-	AssignedToName   *string         `db:"assigned_to_name" json:"assigned_to_name,omitempty"`
+	AssignedToName   *string         `db:"-" json:"assigned_to_name,omitempty"`
 	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+// LeadWithAssignment is used for queries that LEFT JOIN users to get the employee name.
+type LeadWithAssignment struct {
+	Lead
+	AssignedToName *string `db:"assigned_to_name" json:"assigned_to_name,omitempty"`
 }
 
 // RawLead is the shape Node.js POSTs — source-independent contract.
