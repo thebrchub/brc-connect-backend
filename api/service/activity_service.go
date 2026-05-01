@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"brc-connect-backend/api/repository"
 )
@@ -53,6 +54,12 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID, employ
 		}
 		if !validStatuses[status] {
 			return fmt.Errorf("invalid status")
+		}
+		// Auto-set last_contact when status moves away from pending
+		if status != "pending" {
+			if _, hasLC := updates["last_contact"]; !hasLC {
+				updates["last_contact"] = time.Now()
+			}
 		}
 	}
 
