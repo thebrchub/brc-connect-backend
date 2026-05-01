@@ -38,12 +38,6 @@ type Lead struct {
 	UpdatedAt        time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-// LeadWithAssignment is used for queries that LEFT JOIN users to get the employee name.
-type LeadWithAssignment struct {
-	Lead
-	AssignedToName *string `db:"assigned_to_name" json:"assigned_to_name,omitempty"`
-}
-
 // RawLead is the shape Node.js POSTs — source-independent contract.
 type RawLead struct {
 	BusinessName     string          `json:"business_name"`

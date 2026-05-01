@@ -61,23 +61,21 @@ const leadInsertSQL = `INSERT INTO leads (
 
 func (r *LeadRepo) GetByID(ctx context.Context, id string) (*models.Lead, error) {
 	lead, err := redis.Fetch(ctx, "lead:"+id, r.leadTTL, func(ctx context.Context) (*models.Lead, error) {
-		rows, err := postgress.Query[models.LeadWithAssignment](ctx,
-			`SELECT l.*, u.name AS assigned_to_name
-			 FROM leads l
-			 LEFT JOIN users u ON u.id = l.assigned_to
-			 WHERE l.id = $1`, id)
+		var l models.Lead
+		found, err := postgress.Get(ctx, "leads", id, &l)
 		if err != nil {
 			return nil, err
 		}
-		if len(rows) == 0 {
+		if !found {
 			return nil, nil
 		}
-		result := rows[0].Lead
-		result.AssignedToName = rows[0].AssignedToName
-		return &result, nil
+		return &l, nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if lead != nil && lead.AssignedTo != nil {
+		r.populateAssignedName(ctx, lead)
 	}
 	return lead, nil
 }
@@ -134,16 +132,11 @@ func (r *LeadRepo) GetFiltered(ctx context.Context, city, status, source string,
 		}
 
 		offset := (page - 1) * pageSize
-		dataSQL := fmt.Sprintf("SELECT l.*, u.name AS assigned_to_name FROM leads l LEFT JOIN users u ON u.id = l.assigned_to WHERE %s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d", where, argIdx, argIdx+1)
+		dataSQL := fmt.Sprintf("SELECT * FROM leads l WHERE %s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d", where, argIdx, argIdx+1)
 		args = append(args, pageSize, offset)
-		dataRows, err := postgress.Query[models.LeadWithAssignment](ctx, dataSQL, args...)
+		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)
 		if err != nil {
 			return nil, err
-		}
-		leads := make([]models.Lead, len(dataRows))
-		for i, r := range dataRows {
-			leads[i] = r.Lead
-			leads[i].AssignedToName = r.AssignedToName
 		}
 		return &filteredResult{Leads: leads, Total: total}, nil
 	})
@@ -153,6 +146,7 @@ func (r *LeadRepo) GetFiltered(ctx context.Context, city, status, source string,
 	if result == nil {
 		return nil, 0, nil
 	}
+	r.populateAssignedNames(ctx, result.Leads)
 	return result.Leads, result.Total, nil
 }
 
@@ -276,9 +270,7 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 	))
 
 	result, err := redis.Fetch(ctx, cacheKey, r.filterTTL, func(ctx context.Context) (*filteredResult, error) {
-		baseJoin := `FROM leads l
-			LEFT JOIN users u ON u.id = l.assigned_to
-			WHERE l.admin_id = $1`
+		baseWhere := `FROM leads l WHERE l.admin_id = $1`
 		args := []any{adminID}
 		argIdx := 2
 
@@ -307,7 +299,7 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 			where += " AND l.phone_valid = true"
 		}
 
-		countSQL := "SELECT COUNT(*) " + baseJoin + where
+		countSQL := "SELECT COUNT(*) " + baseWhere + where
 		rows, err := postgress.Query[struct {
 			Count int `db:"count"`
 		}](ctx, countSQL, args...)
@@ -320,17 +312,12 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 		}
 
 		offset := (page - 1) * pageSize
-		dataSQL := fmt.Sprintf("SELECT l.*, u.name AS assigned_to_name %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
-			baseJoin, where, argIdx, argIdx+1)
+		dataSQL := fmt.Sprintf("SELECT l.* %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
+			baseWhere, where, argIdx, argIdx+1)
 		args = append(args, pageSize, offset)
-		joinRows, err := postgress.Query[models.LeadWithAssignment](ctx, dataSQL, args...)
+		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)
 		if err != nil {
 			return nil, err
-		}
-		leads := make([]models.Lead, len(joinRows))
-		for i, r := range joinRows {
-			leads[i] = r.Lead
-			leads[i].AssignedToName = r.AssignedToName
 		}
 		return &filteredResult{Leads: leads, Total: total}, nil
 	})
@@ -340,5 +327,69 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 	if result == nil {
 		return nil, 0, nil
 	}
+	// Populate assigned employee names
+	r.populateAssignedNames(ctx, result.Leads)
 	return result.Leads, result.Total, nil
+}
+
+// populateAssignedName fills the AssignedToName field for a single lead.
+func (r *LeadRepo) populateAssignedName(ctx context.Context, lead *models.Lead) {
+	if lead.AssignedTo == nil {
+		return
+	}
+	rows, err := postgress.Query[struct {
+		Name string `db:"name"`
+	}](ctx, "SELECT name FROM users WHERE id = $1", *lead.AssignedTo)
+	if err == nil && len(rows) > 0 {
+		lead.AssignedToName = &rows[0].Name
+	}
+}
+
+// populateAssignedNames fills the AssignedToName field for a list of leads (batch).
+func (r *LeadRepo) populateAssignedNames(ctx context.Context, leads []models.Lead) {
+	// Collect unique assigned_to IDs
+	idSet := map[string]bool{}
+	for i := range leads {
+		if leads[i].AssignedTo != nil {
+			idSet[*leads[i].AssignedTo] = true
+		}
+	}
+	if len(idSet) == 0 {
+		return
+	}
+
+	// Build IN query
+	ids := make([]any, 0, len(idSet))
+	placeholders := ""
+	idx := 1
+	for id := range idSet {
+		if placeholders != "" {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", idx)
+		ids = append(ids, id)
+		idx++
+	}
+
+	type userRow struct {
+		ID   string `db:"id"`
+		Name string `db:"name"`
+	}
+	rows, err := postgress.Query[userRow](ctx, fmt.Sprintf("SELECT id, name FROM users WHERE id IN (%s)", placeholders), ids...)
+	if err != nil {
+		return
+	}
+
+	nameMap := map[string]string{}
+	for _, row := range rows {
+		nameMap[row.ID] = row.Name
+	}
+
+	for i := range leads {
+		if leads[i].AssignedTo != nil {
+			if name, ok := nameMap[*leads[i].AssignedTo]; ok {
+				leads[i].AssignedToName = &name
+			}
+		}
+	}
 }
