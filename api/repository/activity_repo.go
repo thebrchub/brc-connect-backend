@@ -184,6 +184,7 @@ func (r *ActivityRepo) UpdateActivity(ctx context.Context, id string, updates ma
 }
 
 // PopulateForCampaign bulk-inserts lead_activities for leads belonging to a campaign's admin, scoped by city+category.
+// Also sets leads.assigned_to so the admin can see the assignment.
 func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, campaignID string) error {
 	_, err := postgress.Exec(ctx,
 		`INSERT INTO lead_activities (id, lead_id, employee_id, campaign_id, status, created_at, updated_at)
@@ -202,6 +203,14 @@ func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, camp
 	if err != nil {
 		return err
 	}
+
+	// Also stamp leads.assigned_to for the admin Leads view
+	_, _ = postgress.Exec(ctx,
+		`UPDATE leads l SET assigned_to = $1, updated_at = NOW()
+		 FROM lead_activities la
+		 WHERE la.lead_id = l.id AND la.campaign_id = $2 AND la.employee_id = $1
+		 AND (l.assigned_to IS NULL OR l.assigned_to != $1)`, employeeID, campaignID)
+
 	r.invalidateEmployeeCache(ctx, employeeID)
 	return nil
 }
