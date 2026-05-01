@@ -29,7 +29,7 @@ func (r *LeadRepo) Insert(ctx context.Context, lead models.Lead) (string, error)
 		lead.ID, lead.AdminID, lead.BusinessName, lead.Category, lead.PhoneE164, lead.PhoneValid, lead.PhoneType, lead.PhoneConfidence,
 		lead.Email, lead.EmailValid, lead.EmailCatchall, lead.EmailDisposable, lead.EmailConfidence,
 		lead.WebsiteURL, lead.WebsiteDomain, lead.Address, lead.City, lead.Country, lead.Source, lead.SourceURLs,
-		lead.LeadScore, lead.TechStack, lead.HasSSL, lead.IsMobileFriendly, lead.Status)
+		lead.LeadScore, lead.TechStack, lead.HasSSL, lead.IsMobileFriendly, lead.Status, lead.AssignedTo)
 	if err == nil {
 		r.invalidateFilterCache(ctx)
 	}
@@ -43,7 +43,7 @@ func (r *LeadRepo) InsertBatch(ctx context.Context, leads []models.Lead) error {
 			leads[i].ID, leads[i].AdminID, leads[i].BusinessName, leads[i].Category, leads[i].PhoneE164, leads[i].PhoneValid, leads[i].PhoneType, leads[i].PhoneConfidence,
 			leads[i].Email, leads[i].EmailValid, leads[i].EmailCatchall, leads[i].EmailDisposable, leads[i].EmailConfidence,
 			leads[i].WebsiteURL, leads[i].WebsiteDomain, leads[i].Address, leads[i].City, leads[i].Country, leads[i].Source, leads[i].SourceURLs,
-			leads[i].LeadScore, leads[i].TechStack, leads[i].HasSSL, leads[i].IsMobileFriendly, leads[i].Status)
+			leads[i].LeadScore, leads[i].TechStack, leads[i].HasSSL, leads[i].IsMobileFriendly, leads[i].Status, leads[i].AssignedTo)
 		if err != nil {
 			return err
 		}
@@ -56,8 +56,8 @@ const leadInsertSQL = `INSERT INTO leads (
 	id, admin_id, business_name, category, phone_e164, phone_valid, phone_type, phone_confidence,
 	email, email_valid, email_catchall, email_disposable, email_confidence,
 	website_url, website_domain, address, city, country, source, source_urls,
-	lead_score, tech_stack, has_ssl, is_mobile_friendly, status, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW(),NOW())`
+	lead_score, tech_stack, has_ssl, is_mobile_friendly, status, assigned_to, created_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW(),NOW())`
 
 func (r *LeadRepo) GetByID(ctx context.Context, id string) (*models.Lead, error) {
 	lead, err := redis.Fetch(ctx, "lead:"+id, r.leadTTL, func(ctx context.Context) (*models.Lead, error) {
@@ -212,6 +212,53 @@ func (r *LeadRepo) invalidateFilterCache(ctx context.Context) {
 	}
 }
 
+// BulkAssign sets the assigned_to field on multiple leads.
+func (r *LeadRepo) BulkAssign(ctx context.Context, leadIDs []string, employeeID string) (int, error) {
+	if len(leadIDs) == 0 {
+		return 0, nil
+	}
+	// Build placeholders: $1 = employeeID, $2..$N = leadIDs
+	args := []any{employeeID}
+	placeholders := ""
+	for i, id := range leadIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
+	}
+	sql := fmt.Sprintf("UPDATE leads SET assigned_to = $1, updated_at = NOW() WHERE id IN (%s)", placeholders)
+	rowsAffected, err := postgress.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, err
+	}
+	r.invalidateFilterCache(ctx)
+	return int(rowsAffected), nil
+}
+
+// UnassignLeads removes the assigned_to on multiple leads.
+func (r *LeadRepo) UnassignLeads(ctx context.Context, leadIDs []string) (int, error) {
+	if len(leadIDs) == 0 {
+		return 0, nil
+	}
+	args := []any{}
+	placeholders := ""
+	for i, id := range leadIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", i+1)
+		args = append(args, id)
+	}
+	sql := fmt.Sprintf("UPDATE leads SET assigned_to = NULL, updated_at = NOW() WHERE id IN (%s)", placeholders)
+	rowsAffected, err := postgress.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, err
+	}
+	r.invalidateFilterCache(ctx)
+	return int(rowsAffected), nil
+}
+
 // GetFilteredByAdmin returns leads scoped to an admin via admin_id column.
 func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status, source string, scoreGTE int, hasPhone bool, page, pageSize int) ([]models.Lead, int, error) {
 	cacheKey := fmt.Sprintf("leads:admin:%s:filter:%x", adminID, sha256.Sum256(
@@ -219,7 +266,9 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 	))
 
 	result, err := redis.Fetch(ctx, cacheKey, r.filterTTL, func(ctx context.Context) (*filteredResult, error) {
-		baseJoin := `FROM leads l WHERE l.admin_id = $1`
+		baseJoin := `FROM leads l
+			LEFT JOIN users u ON u.id = l.assigned_to
+			WHERE l.admin_id = $1`
 		args := []any{adminID}
 		argIdx := 2
 
@@ -261,7 +310,7 @@ func (r *LeadRepo) GetFilteredByAdmin(ctx context.Context, adminID, city, status
 		}
 
 		offset := (page - 1) * pageSize
-		dataSQL := fmt.Sprintf("SELECT l.* %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
+		dataSQL := fmt.Sprintf("SELECT l.*, u.name AS assigned_to_name %s%s ORDER BY (l.status = 'new') DESC, l.lead_score DESC, l.created_at DESC LIMIT $%d OFFSET $%d",
 			baseJoin, where, argIdx, argIdx+1)
 		args = append(args, pageSize, offset)
 		leads, err := postgress.Query[models.Lead](ctx, dataSQL, args...)

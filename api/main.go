@@ -101,7 +101,7 @@ func main() {
 	leadSvc := service.NewLeadService(leadRepo, campaignRepo, jobRepo)
 	campaignSvc := service.NewCampaignService(campaignRepo, jobRepo, activityRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
-	activitySvc := service.NewActivityService(activityRepo, campaignRepo)
+	activitySvc := service.NewActivityService(activityRepo, campaignRepo, leadRepo)
 	sessionSvc := service.NewSessionService(sessionRepo)
 
 	// Seed super admin
@@ -112,7 +112,7 @@ func main() {
 
 	// Handlers
 	authH := handler.NewAuthHandler(userSvc)
-	leadH := handler.NewLeadHandler(leadRepo)
+	leadH := handler.NewLeadHandler(leadRepo, userRepo)
 	campaignH := handler.NewCampaignHandler(campaignSvc)
 	exportH := handler.NewExportHandler(leadRepo, cfg.ExportMaxRows)
 	progressH := handler.NewProgressHandler()

@@ -11,10 +11,11 @@ import (
 type ActivityService struct {
 	activityRepo *repository.ActivityRepo
 	campaignRepo *repository.CampaignRepo
+	leadRepo     *repository.LeadRepo
 }
 
-func NewActivityService(activityRepo *repository.ActivityRepo, campaignRepo *repository.CampaignRepo) *ActivityService {
-	return &ActivityService{activityRepo: activityRepo, campaignRepo: campaignRepo}
+func NewActivityService(activityRepo *repository.ActivityRepo, campaignRepo *repository.CampaignRepo, leadRepo *repository.LeadRepo) *ActivityService {
+	return &ActivityService{activityRepo: activityRepo, campaignRepo: campaignRepo, leadRepo: leadRepo}
 }
 
 func (s *ActivityService) GetFreshLeads(ctx context.Context, employeeID string, page int) ([]repository.CRMLeadView, int, error) {
@@ -63,7 +64,39 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID, employ
 		}
 	}
 
-	return s.activityRepo.UpdateActivity(ctx, activityID, updates)
+	if err := s.activityRepo.UpdateActivity(ctx, activityID, updates); err != nil {
+		return err
+	}
+
+	// Sync CRM status to the main leads table
+	if status, ok := updates["status"].(string); ok {
+		leadStatus := crmToLeadStatus(status)
+		lead, err := s.leadRepo.GetByID(ctx, activity.LeadID)
+		if err == nil && lead != nil {
+			lead.Status = leadStatus
+			_ = s.leadRepo.Update(ctx, *lead)
+		}
+	}
+
+	return nil
+}
+
+// crmToLeadStatus maps CRM activity statuses to lead-level statuses.
+func crmToLeadStatus(crmStatus string) string {
+	switch crmStatus {
+	case "pending":
+		return "new"
+	case "contacted", "follow_up":
+		return "contacted"
+	case "converted":
+		return "converted"
+	case "not_interested":
+		return "closed"
+	case "closed":
+		return "closed"
+	default:
+		return "new"
+	}
 }
 
 func (s *ActivityService) GetDashboard(ctx context.Context, adminID string) ([]repository.EmployeeStats, error) {

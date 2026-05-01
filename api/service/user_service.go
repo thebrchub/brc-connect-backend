@@ -124,19 +124,24 @@ func (s *UserService) DeactivateAdmin(ctx context.Context, adminID string) error
 	return s.userRepo.DeactivateWithEmployees(ctx, adminID)
 }
 
-// SeedSuperAdmin creates the super_admin if it doesn't exist. Called on startup.
+// SeedSuperAdmin creates or updates the super_admin on every startup.
 func (s *UserService) SeedSuperAdmin(ctx context.Context, email, pass string) error {
+	hashed, err := password.Hash(pass)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
 	existing, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		return err
 	}
-	if existing != nil {
-		return nil // already seeded
-	}
 
-	hashed, err := password.Hash(pass)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+	if existing != nil {
+		// Update password and ensure active on every startup
+		return s.userRepo.Update(ctx, existing.ID, map[string]any{
+			"password":  hashed,
+			"is_active": true,
+		})
 	}
 
 	user := models.User{

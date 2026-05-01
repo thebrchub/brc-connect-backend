@@ -14,10 +14,11 @@ import (
 
 type LeadHandler struct {
 	leadRepo *repository.LeadRepo
+	userRepo *repository.UserRepo
 }
 
-func NewLeadHandler(leadRepo *repository.LeadRepo) *LeadHandler {
-	return &LeadHandler{leadRepo: leadRepo}
+func NewLeadHandler(leadRepo *repository.LeadRepo, userRepo *repository.UserRepo) *LeadHandler {
+	return &LeadHandler{leadRepo: leadRepo, userRepo: userRepo}
 }
 
 // GetLeads handles GET /leads with filtering and pagination — scoped by role.
@@ -147,4 +148,58 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helper.JSON(w, http.StatusOK, existing)
+}
+
+// BulkAssignLeads handles POST /leads/assign — assigns leads to an employee.
+func (h *LeadHandler) BulkAssignLeads(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.Subject(r.Context())
+
+	var body struct {
+		LeadIDs    []string `json:"lead_ids"`
+		EmployeeID string   `json:"employee_id"`
+	}
+	if err := helper.ReadJSON(r, &body); err != nil {
+		helper.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if len(body.LeadIDs) == 0 {
+		helper.Error(w, http.StatusBadRequest, "lead_ids is required")
+		return
+	}
+	if len(body.LeadIDs) > 500 {
+		helper.Error(w, http.StatusBadRequest, "max 500 leads per request")
+		return
+	}
+
+	// If employee_id is empty, unassign the leads
+	if body.EmployeeID == "" {
+		count, err := h.leadRepo.UnassignLeads(r.Context(), body.LeadIDs)
+		if err != nil {
+			log.Printf("ERROR [lead] - unassign leads failed error=%s", err)
+			helper.Error(w, http.StatusInternalServerError, "failed to unassign leads")
+			return
+		}
+		helper.JSON(w, http.StatusOK, map[string]any{"assigned": count})
+		return
+	}
+
+	// Verify employee belongs to this admin
+	emp, err := h.userRepo.GetByID(r.Context(), body.EmployeeID)
+	if err != nil || emp == nil {
+		helper.Error(w, http.StatusBadRequest, "employee not found")
+		return
+	}
+	if emp.Role != "employee" || emp.AdminID == nil || *emp.AdminID != adminID {
+		helper.Error(w, http.StatusForbidden, "employee does not belong to you")
+		return
+	}
+
+	count, err := h.leadRepo.BulkAssign(r.Context(), body.LeadIDs, body.EmployeeID)
+	if err != nil {
+		log.Printf("ERROR [lead] - bulk assign leads failed error=%s", err)
+		helper.Error(w, http.StatusInternalServerError, "failed to assign leads")
+		return
+	}
+
+	helper.JSON(w, http.StatusOK, map[string]any{"assigned": count})
 }

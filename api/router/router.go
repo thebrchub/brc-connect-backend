@@ -29,6 +29,7 @@ func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandl
 	mux.HandleFunc("GET /leads", middleware.Chain(leadH.GetLeads, auth))
 	mux.HandleFunc("GET /leads/{id}", middleware.Chain(leadH.GetLead, auth))
 	mux.HandleFunc("PATCH /leads/{id}", middleware.Chain(leadH.UpdateLead, auth))
+	mux.HandleFunc("POST /leads/assign", middleware.Chain(leadH.BulkAssignLeads, auth, admin))
 	mux.HandleFunc("GET /leads/export", middleware.Chain(exportH.ExportCSV, auth))
 	mux.HandleFunc("POST /campaigns", middleware.Chain(campaignH.CreateCampaign, auth, admin))
 	mux.HandleFunc("GET /campaigns", middleware.Chain(campaignH.GetCampaigns, auth))
