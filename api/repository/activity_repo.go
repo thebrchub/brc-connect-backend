@@ -55,19 +55,7 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 	}
 
 	res, err := redis.Fetch(ctx, cacheKey, r.listTTL, func(ctx context.Context) (*result, error) {
-		countRows, err := postgress.Query[struct {
-			Count int `db:"count"`
-		}](ctx, `SELECT COUNT(*) AS count FROM lead_activities la
-			WHERE la.employee_id = $1 AND la.status = 'pending'`, employeeID)
-		if err != nil {
-			return nil, err
-		}
-		total := 0
-		if len(countRows) > 0 {
-			total = countRows[0].Count
-		}
-
-		offset := (page - 1) * 20
+		// Only show 20 leads at a time — employee works through these before getting more
 		leads, err := postgress.Query[CRMLeadView](ctx,
 			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.email, l.city, l.category,
 				l.website_url, l.has_ssl, l.is_mobile_friendly, l.source,
@@ -76,11 +64,11 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 			JOIN leads l ON l.id = la.lead_id
 			WHERE la.employee_id = $1 AND la.status = 'pending'
 			ORDER BY la.created_at ASC
-			LIMIT 20 OFFSET $2`, employeeID, offset)
+			LIMIT 20`, employeeID)
 		if err != nil {
 			return nil, err
 		}
-		return &result{Leads: leads, Total: total}, nil
+		return &result{Leads: leads, Total: len(leads)}, nil
 	})
 	if err != nil {
 		return nil, 0, err
