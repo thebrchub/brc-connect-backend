@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS lead_activities (
                     CHECK (status IN ('pending', 'contacted', 'follow_up', 'converted', 'not_interested', 'closed')),
     notes           TEXT,
     next_action     TEXT,
-    next_follow_up  DATE,
+    next_follow_up  TIMESTAMPTZ,
     last_contact    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
