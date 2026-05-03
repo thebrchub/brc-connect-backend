@@ -58,8 +58,7 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 		countRows, err := postgress.Query[struct {
 			Count int `db:"count"`
 		}](ctx, `SELECT COUNT(*) AS count FROM lead_activities la
-			JOIN campaigns c ON c.id = la.campaign_id
-			WHERE c.assigned_to = $1 AND la.status = 'pending'`, employeeID)
+			WHERE la.employee_id = $1 AND la.status = 'pending'`, employeeID)
 		if err != nil {
 			return nil, err
 		}
@@ -75,8 +74,7 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
 			JOIN leads l ON l.id = la.lead_id
-			JOIN campaigns c ON c.id = la.campaign_id
-			WHERE c.assigned_to = $1 AND la.status = 'pending'
+			WHERE la.employee_id = $1 AND la.status = 'pending'
 			ORDER BY la.created_at ASC
 			LIMIT 20 OFFSET $2`, employeeID, offset)
 		if err != nil {
@@ -103,8 +101,7 @@ func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, 
 		countRows, err := postgress.Query[struct {
 			Count int `db:"count"`
 		}](ctx, `SELECT COUNT(*) AS count FROM lead_activities la
-			JOIN campaigns c ON c.id = la.campaign_id
-			WHERE c.assigned_to = $1 AND la.status != 'pending'`, employeeID)
+			WHERE la.employee_id = $1 AND la.status != 'pending'`, employeeID)
 		if err != nil {
 			return nil, err
 		}
@@ -120,8 +117,7 @@ func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, 
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
 			JOIN leads l ON l.id = la.lead_id
-			JOIN campaigns c ON c.id = la.campaign_id
-			WHERE c.assigned_to = $1 AND la.status != 'pending'
+			WHERE la.employee_id = $1 AND la.status != 'pending'
 			ORDER BY la.updated_at DESC
 			LIMIT $2 OFFSET $3`, employeeID, pageSize, offset)
 		if err != nil {
@@ -212,6 +208,7 @@ func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, camp
 		 AND (l.assigned_to IS NULL OR l.assigned_to != $1)`, employeeID, campaignID)
 
 	r.invalidateEmployeeCache(ctx, employeeID)
+	r.invalidateAdminDashboard(ctx, campaignID)
 	return nil
 }
 
@@ -229,7 +226,74 @@ func (r *ActivityRepo) InsertBatch(ctx context.Context, employeeID, campaignID s
 		}
 	}
 	r.invalidateEmployeeCache(ctx, employeeID)
+	r.invalidateAdminDashboard(ctx, campaignID)
 	return nil
+}
+
+// InsertBatchFromLeads creates lead_activity rows for leads, finding their campaign via scrape_jobs.
+// If a lead has no associated campaign, it uses the most recent campaign belonging to the admin.
+func (r *ActivityRepo) InsertBatchFromLeads(ctx context.Context, employeeID, adminID string, leadIDs []string) error {
+	if len(leadIDs) == 0 {
+		return nil
+	}
+	for _, leadID := range leadIDs {
+		id := uuid.NewString()
+		_, err := postgress.Exec(ctx,
+			`INSERT INTO lead_activities (id, lead_id, employee_id, campaign_id, status, created_at, updated_at)
+			 SELECT $1, $2, $3,
+				COALESCE(
+					(SELECT sj.campaign_id FROM scrape_jobs sj
+					 JOIN leads l2 ON LOWER(l2.city) = LOWER(sj.city) AND LOWER(l2.category) = LOWER(sj.category)
+					 WHERE l2.id = $2 LIMIT 1),
+					(SELECT id FROM campaigns WHERE admin_id = $4 ORDER BY created_at DESC LIMIT 1)
+				),
+				'pending', NOW(), NOW()
+			 WHERE NOT EXISTS (
+				SELECT 1 FROM lead_activities la WHERE la.lead_id = $2 AND la.employee_id = $3
+			 )
+			 AND (
+				(SELECT sj.campaign_id FROM scrape_jobs sj
+				 JOIN leads l2 ON LOWER(l2.city) = LOWER(sj.city) AND LOWER(l2.category) = LOWER(sj.category)
+				 WHERE l2.id = $2 LIMIT 1) IS NOT NULL
+				OR
+				(SELECT id FROM campaigns WHERE admin_id = $4 ORDER BY created_at DESC LIMIT 1) IS NOT NULL
+			 )`,
+			id, leadID, employeeID, adminID)
+		if err != nil {
+			return err
+		}
+	}
+	r.invalidateEmployeeCache(ctx, employeeID)
+	// Invalidate dashboard for this admin directly
+	redis.Remove(ctx, fmt.Sprintf("crm:dashboard:%s", adminID))
+	return nil
+}
+
+// RemoveByLeads deletes lead_activities for the given lead IDs (used on unassignment).
+func (r *ActivityRepo) RemoveByLeads(ctx context.Context, leadIDs []string) error {
+	if len(leadIDs) == 0 {
+		return nil
+	}
+	placeholders := ""
+	args := []any{}
+	for i, id := range leadIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", i+1)
+		args = append(args, id)
+	}
+	_, err := postgress.Exec(ctx,
+		fmt.Sprintf("DELETE FROM lead_activities WHERE lead_id IN (%s) AND status = 'pending'", placeholders), args...)
+	return err
+}
+
+// SyncStatusByLead updates the status of all lead_activities for a given lead.
+func (r *ActivityRepo) SyncStatusByLead(ctx context.Context, leadID, status string) error {
+	_, err := postgress.Exec(ctx,
+		"UPDATE lead_activities SET status = $1, updated_at = NOW() WHERE lead_id = $2 AND status != $1",
+		status, leadID)
+	return err
 }
 
 // EmployeeStats holds aggregated performance metrics for an employee.

@@ -251,6 +251,6 @@ func (r *CampaignRepo) AssignEmployee(ctx context.Context, campaignID, employeeI
 		return err
 	}
 	r.invalidateListCache(ctx)
-	redis.Remove(ctx, fmt.Sprintf("sales:campaign:%s", campaignID))
+	redis.Remove(ctx, "campaign:"+campaignID)
 	return nil
 }

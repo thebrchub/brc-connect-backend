@@ -216,22 +216,22 @@ func (r *LeadRepo) invalidateFilterCache(ctx context.Context) {
 	}
 }
 
-// BulkAssign sets the assigned_to field on multiple leads.
-func (r *LeadRepo) BulkAssign(ctx context.Context, leadIDs []string, employeeID string) (int, error) {
+// BulkAssign sets the assigned_to field on multiple leads scoped to an admin.
+func (r *LeadRepo) BulkAssign(ctx context.Context, adminID string, leadIDs []string, employeeID string) (int, error) {
 	if len(leadIDs) == 0 {
 		return 0, nil
 	}
-	// Build placeholders: $1 = employeeID, $2..$N = leadIDs
-	args := []any{employeeID}
+	// Build placeholders: $1 = employeeID, $2 = adminID, $3..$N = leadIDs
+	args := []any{employeeID, adminID}
 	placeholders := ""
 	for i, id := range leadIDs {
 		if i > 0 {
 			placeholders += ","
 		}
-		placeholders += fmt.Sprintf("$%d", i+2)
+		placeholders += fmt.Sprintf("$%d", i+3)
 		args = append(args, id)
 	}
-	sql := fmt.Sprintf("UPDATE leads SET assigned_to = $1, updated_at = NOW() WHERE id IN (%s)", placeholders)
+	sql := fmt.Sprintf("UPDATE leads SET assigned_to = $1, updated_at = NOW() WHERE admin_id = $2 AND id IN (%s)", placeholders)
 	rowsAffected, err := postgress.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, err
@@ -240,21 +240,22 @@ func (r *LeadRepo) BulkAssign(ctx context.Context, leadIDs []string, employeeID 
 	return int(rowsAffected), nil
 }
 
-// UnassignLeads removes the assigned_to on multiple leads.
-func (r *LeadRepo) UnassignLeads(ctx context.Context, leadIDs []string) (int, error) {
+// UnassignLeads removes the assigned_to on multiple leads scoped to an admin.
+func (r *LeadRepo) UnassignLeads(ctx context.Context, adminID string, leadIDs []string) (int, error) {
 	if len(leadIDs) == 0 {
 		return 0, nil
 	}
-	args := []any{}
+	// $1 = adminID, $2..$N = leadIDs
+	args := []any{adminID}
 	placeholders := ""
 	for i, id := range leadIDs {
 		if i > 0 {
 			placeholders += ","
 		}
-		placeholders += fmt.Sprintf("$%d", i+1)
+		placeholders += fmt.Sprintf("$%d", i+2)
 		args = append(args, id)
 	}
-	sql := fmt.Sprintf("UPDATE leads SET assigned_to = NULL, updated_at = NOW() WHERE id IN (%s)", placeholders)
+	sql := fmt.Sprintf("UPDATE leads SET assigned_to = NULL, updated_at = NOW() WHERE admin_id = $1 AND id IN (%s)", placeholders)
 	rowsAffected, err := postgress.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, err

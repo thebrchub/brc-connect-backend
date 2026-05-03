@@ -12,13 +12,30 @@ import (
 	"brc-connect-backend/api/repository"
 )
 
-type LeadHandler struct {
-	leadRepo *repository.LeadRepo
-	userRepo *repository.UserRepo
+// leadToCRMStatus maps lead status to CRM activity status.
+func leadToCRMStatus(leadStatus string) string {
+	switch leadStatus {
+	case "new":
+		return "pending"
+	case "contacted":
+		return "contacted"
+	case "converted":
+		return "converted"
+	case "closed":
+		return "closed"
+	default:
+		return "pending"
+	}
 }
 
-func NewLeadHandler(leadRepo *repository.LeadRepo, userRepo *repository.UserRepo) *LeadHandler {
-	return &LeadHandler{leadRepo: leadRepo, userRepo: userRepo}
+type LeadHandler struct {
+	leadRepo     *repository.LeadRepo
+	userRepo     *repository.UserRepo
+	activityRepo *repository.ActivityRepo
+}
+
+func NewLeadHandler(leadRepo *repository.LeadRepo, userRepo *repository.UserRepo, activityRepo *repository.ActivityRepo) *LeadHandler {
+	return &LeadHandler{leadRepo: leadRepo, userRepo: userRepo, activityRepo: activityRepo}
 }
 
 // GetLeads handles GET /leads with filtering and pagination — scoped by role.
@@ -91,6 +108,10 @@ func (h *LeadHandler) GetLead(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusForbidden, "access denied")
 		return
 	}
+	if role == "employee" && (lead.AssignedTo == nil || *lead.AssignedTo != userID) {
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
 
 	helper.JSON(w, http.StatusOK, lead)
 }
@@ -121,6 +142,10 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusForbidden, "access denied")
 		return
 	}
+	if role == "employee" && (existing.AssignedTo == nil || *existing.AssignedTo != userID) {
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
 
 	var updates map[string]any
 	if err := helper.ReadJSON(r, &updates); err != nil {
@@ -146,6 +171,10 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusInternalServerError, "failed to update lead")
 		return
 	}
+
+	// Sync status to lead_activities
+	crmStatus := leadToCRMStatus(existing.Status)
+	_ = h.activityRepo.SyncStatusByLead(r.Context(), id, crmStatus)
 
 	helper.JSON(w, http.StatusOK, existing)
 }
@@ -173,12 +202,14 @@ func (h *LeadHandler) BulkAssignLeads(w http.ResponseWriter, r *http.Request) {
 
 	// If employee_id is empty, unassign the leads
 	if body.EmployeeID == "" {
-		count, err := h.leadRepo.UnassignLeads(r.Context(), body.LeadIDs)
+		count, err := h.leadRepo.UnassignLeads(r.Context(), adminID, body.LeadIDs)
 		if err != nil {
 			log.Printf("ERROR [lead] - unassign leads failed error=%s", err)
 			helper.Error(w, http.StatusInternalServerError, "failed to unassign leads")
 			return
 		}
+		// Remove corresponding lead_activities
+		_ = h.activityRepo.RemoveByLeads(r.Context(), body.LeadIDs)
 		helper.JSON(w, http.StatusOK, map[string]any{"assigned": count})
 		return
 	}
@@ -194,12 +225,15 @@ func (h *LeadHandler) BulkAssignLeads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.leadRepo.BulkAssign(r.Context(), body.LeadIDs, body.EmployeeID)
+	count, err := h.leadRepo.BulkAssign(r.Context(), adminID, body.LeadIDs, body.EmployeeID)
 	if err != nil {
 		log.Printf("ERROR [lead] - bulk assign leads failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to assign leads")
 		return
 	}
+
+	// Create lead_activities so employee can see them in CRM
+	_ = h.activityRepo.InsertBatchFromLeads(r.Context(), body.EmployeeID, adminID, body.LeadIDs)
 
 	helper.JSON(w, http.StatusOK, map[string]any{"assigned": count})
 }

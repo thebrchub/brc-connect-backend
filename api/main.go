@@ -112,7 +112,7 @@ func main() {
 
 	// Handlers
 	authH := handler.NewAuthHandler(userSvc)
-	leadH := handler.NewLeadHandler(leadRepo, userRepo)
+	leadH := handler.NewLeadHandler(leadRepo, userRepo, activityRepo)
 	campaignH := handler.NewCampaignHandler(campaignSvc)
 	exportH := handler.NewExportHandler(leadRepo, cfg.ExportMaxRows)
 	progressH := handler.NewProgressHandler()

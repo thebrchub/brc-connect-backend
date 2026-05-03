@@ -92,6 +92,27 @@ func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Ownership check
+	role := middleware.Role(r.Context())
+	userID := middleware.Subject(r.Context())
+	switch role {
+	case "super_admin":
+		// can see all
+	case "admin":
+		if campaign.AdminID == nil || *campaign.AdminID != userID {
+			helper.Error(w, http.StatusForbidden, "access denied")
+			return
+		}
+	case "employee":
+		if campaign.AssignedTo == nil || *campaign.AssignedTo != userID {
+			helper.Error(w, http.StatusForbidden, "access denied")
+			return
+		}
+	default:
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	helper.JSON(w, http.StatusOK, campaign)
 }
 
@@ -136,9 +157,26 @@ func (h *CampaignHandler) GetCampaigns(w http.ResponseWriter, r *http.Request) {
 
 // AssignCampaign handles PATCH /campaigns/{id}/assign — admin assigns campaign to employee.
 func (h *CampaignHandler) AssignCampaign(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.Subject(r.Context())
 	id := r.PathValue("id")
 	if id == "" {
 		helper.Error(w, http.StatusBadRequest, "missing campaign id")
+		return
+	}
+
+	// Verify campaign belongs to this admin
+	campaign, err := h.campaignSvc.GetStatus(r.Context(), id)
+	if err != nil {
+		log.Printf("ERROR [campaign] - assign fetch failed id=%s error=%s", id, err)
+		helper.Error(w, http.StatusInternalServerError, "failed to fetch campaign")
+		return
+	}
+	if campaign == nil {
+		helper.Error(w, http.StatusNotFound, "campaign not found")
+		return
+	}
+	if campaign.AdminID == nil || *campaign.AdminID != adminID {
+		helper.Error(w, http.StatusForbidden, "access denied")
 		return
 	}
 
