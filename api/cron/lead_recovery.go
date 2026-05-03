@@ -28,14 +28,16 @@ type LeadRecovery struct {
 	leadSvc        *service.LeadService
 	jobRepo        *repository.JobRepo
 	campaignRepo   *repository.CampaignRepo
+	activityRepo   *repository.ActivityRepo
 	drainBatchSize int
 }
 
-func NewLeadRecovery(leadSvc *service.LeadService, jobRepo *repository.JobRepo, campaignRepo *repository.CampaignRepo, drainBatchSize int) *LeadRecovery {
+func NewLeadRecovery(leadSvc *service.LeadService, jobRepo *repository.JobRepo, campaignRepo *repository.CampaignRepo, activityRepo *repository.ActivityRepo, drainBatchSize int) *LeadRecovery {
 	return &LeadRecovery{
 		leadSvc:        leadSvc,
 		jobRepo:        jobRepo,
 		campaignRepo:   campaignRepo,
+		activityRepo:   activityRepo,
 		drainBatchSize: drainBatchSize,
 	}
 }
@@ -162,12 +164,22 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 				if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
 					log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
 				} else {
-					// If campaign completed with 0 leads, decrement the daily limit counter
 					campaign, cErr := lr.campaignRepo.GetByID(ctx, job.CampaignID)
-					if cErr == nil && campaign != nil && campaign.Status == "completed" && campaign.LeadsFound == 0 {
-						key := fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
-						redis.GetRawClient().Decr(ctx, key)
-						log.Printf("INFO  [lead-recovery] - zero-lead campaign, daily limit decremented campaign_id=%s", job.CampaignID)
+					if cErr == nil && campaign != nil && campaign.Status == "completed" {
+						// If campaign completed with 0 leads, decrement the daily limit counter
+						if campaign.LeadsFound == 0 {
+							key := fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
+							redis.GetRawClient().Decr(ctx, key)
+							log.Printf("INFO  [lead-recovery] - zero-lead campaign, daily limit decremented campaign_id=%s", job.CampaignID)
+						}
+						// Auto-populate lead_activities if campaign was pre-assigned to an employee
+						if campaign.AssignedTo != nil && *campaign.AssignedTo != "" {
+							if err := lr.activityRepo.PopulateForCampaign(ctx, *campaign.AssignedTo, campaign.ID); err != nil {
+								log.Printf("ERROR [lead-recovery] - auto-populate activities failed campaign_id=%s error=%s", campaign.ID, err)
+							} else {
+								log.Printf("INFO  [lead-recovery] - auto-populated activities for pre-assigned campaign campaign_id=%s employee=%s", campaign.ID, *campaign.AssignedTo)
+							}
+						}
 					}
 				}
 			}
