@@ -11,6 +11,7 @@ import { detectTechStack, hasSSL } from "../extractors/tech-stack.js";
 import { log } from "../utils/logger.js";
 
 const MAPS_URL = "https://www.google.com/maps/search/";
+const MAX_TRANSIENT_RETRIES = 2;
 
 export class GoogleMapsScraper extends BaseScraper {
   readonly source = "google_maps";
@@ -19,92 +20,184 @@ export class GoogleMapsScraper extends BaseScraper {
     job: ScrapeJob,
     signal: AbortSignal
   ): AsyncGenerator<RawLead[], void, unknown> {
-    let browser: Browser | null = null;
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES && !signal.aborted; attempt++) {
+      let browser: Browser | null = null;
 
+      try {
+        browser = await puppeteer.launch({
+          headless: true,
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-crashpad",
+            "--no-zygote",
+            "--single-process",
+          ],
+        });
+
+        const page = await browser.newPage();
+        await page.setUserAgent(randomUserAgent());
+        await page.setViewport({ width: 1280, height: 900 });
+
+        const query = encodeURIComponent(`${job.category} ${job.city}`);
+        await page.goto(`${MAPS_URL}${query}`, {
+          waitUntil: "networkidle2",
+          timeout: 30_000,
+        });
+
+        // Wait for results panel to load
+        await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
+
+        let batch: RawLead[] = [];
+        const seenNames = new Set<string>();
+        let scrollAttempts = 0;
+        const maxScrollAttempts = 30;
+        let loopRecoveries = 0;
+        const maxLoopRecoveries = 2;
+
+        while (scrollAttempts < maxScrollAttempts && !signal.aborted) {
+          // Extract visible results
+          let results: RawLead[];
+          try {
+            results = await this.extractResults(page, job);
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            const canRecover =
+              this.isTransientBrowserError(errorMsg) &&
+              loopRecoveries < maxLoopRecoveries;
+
+            if (!canRecover) {
+              throw err;
+            }
+
+            loopRecoveries++;
+            const recovered = await this.recoverMapsPage(page, query, job.job_id, loopRecoveries);
+            if (!recovered) {
+              throw err;
+            }
+            continue;
+          }
+
+          for (const lead of results) {
+            if (signal.aborted) break;
+            if (seenNames.has(lead.business_name.toLowerCase())) continue;
+            seenNames.add(lead.business_name.toLowerCase());
+
+            // Pull details from the right-side Maps panel (phone/address/website)
+            // because many listings do not expose phone in the feed card text.
+            let enrichedLead = await this.enrichFromMapsDetails(page, lead, job, signal);
+
+            // Enrich: visit website for contact info + tech stack
+            if (enrichedLead.website_url) {
+              enrichedLead = await this.enrichLead(enrichedLead, job, signal);
+            }
+
+            batch.push(enrichedLead);
+
+            // Yield batch when full
+            if (batch.length >= config.batchSize) {
+              yield batch;
+              batch = [];
+            }
+          }
+
+          // Scroll the results panel
+          let scrolled = false;
+          try {
+            scrolled = await this.scrollResults(page);
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            const canRecover =
+              this.isTransientBrowserError(errorMsg) &&
+              loopRecoveries < maxLoopRecoveries;
+
+            if (!canRecover) {
+              throw err;
+            }
+
+            loopRecoveries++;
+            const recovered = await this.recoverMapsPage(page, query, job.job_id, loopRecoveries);
+            if (!recovered) {
+              throw err;
+            }
+            continue;
+          }
+
+          if (!scrolled) break; // no more results
+          scrollAttempts++;
+
+          await randomDelay();
+        }
+
+        // Yield remaining — always yield partial results even on abort
+        if (batch.length > 0) {
+          yield batch;
+        }
+        return;
+      } catch (err) {
+        if (signal.aborted) {
+          return;
+        }
+
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const transient = this.isTransientBrowserError(errorMsg);
+        const canRetry = transient && attempt < MAX_TRANSIENT_RETRIES;
+
+        log.error("google maps scraper error", {
+          job_id: job.job_id,
+          attempt: attempt + 1,
+          error: errorMsg,
+          retrying: canRetry,
+        });
+
+        if (!canRetry) {
+          throw err;
+        }
+
+        await sleep(1500 * (attempt + 1));
+      } finally {
+        if (browser) {
+          await browser.close().catch(() => {});
+        }
+      }
+    }
+  }
+
+  private isTransientBrowserError(msg: string): boolean {
+    const m = msg.toLowerCase();
+    return (
+      m.includes("navigating frame was detached") ||
+      m.includes("attempted to use detached frame") ||
+      m.includes("detached frame") ||
+      m.includes("execution context was destroyed") ||
+      m.includes("target closed")
+    );
+  }
+
+  private async recoverMapsPage(
+    page: Page,
+    encodedQuery: string,
+    jobId: string,
+    recoveryAttempt: number
+  ): Promise<boolean> {
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--disable-crashpad",
-          "--no-zygote",
-          "--single-process",
-        ],
+      log.warn("recovering google maps page after transient frame error", {
+        job_id: jobId,
+        recovery_attempt: recoveryAttempt,
       });
 
-      const page = await browser.newPage();
-      await page.setUserAgent(randomUserAgent());
-      await page.setViewport({ width: 1280, height: 900 });
-
-      const query = encodeURIComponent(`${job.category} ${job.city}`);
-      await page.goto(`${MAPS_URL}${query}`, {
+      await page.goto(`${MAPS_URL}${encodedQuery}`, {
         waitUntil: "networkidle2",
         timeout: 30_000,
       });
 
-      // Wait for results panel to load
       await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
-
-      let batch: RawLead[] = [];
-      const seenNames = new Set<string>();
-      let scrollAttempts = 0;
-      const maxScrollAttempts = 30;
-
-      while (scrollAttempts < maxScrollAttempts && !signal.aborted) {
-        // Extract visible results
-        const results = await this.extractResults(page, job);
-
-        for (const lead of results) {
-          if (signal.aborted) break;
-          if (seenNames.has(lead.business_name.toLowerCase())) continue;
-          seenNames.add(lead.business_name.toLowerCase());
-
-          // Pull details from the right-side Maps panel (phone/address/website)
-          // because many listings do not expose phone in the feed card text.
-          let enrichedLead = await this.enrichFromMapsDetails(page, lead, job, signal);
-
-          // Enrich: visit website for contact info + tech stack
-          if (enrichedLead.website_url) {
-            enrichedLead = await this.enrichLead(enrichedLead, job, signal);
-          }
-
-          batch.push(enrichedLead);
-
-          // Yield batch when full
-          if (batch.length >= config.batchSize) {
-            yield batch;
-            batch = [];
-          }
-        }
-
-        // Scroll the results panel
-        const scrolled = await this.scrollResults(page);
-        if (!scrolled) break; // no more results
-        scrollAttempts++;
-
-        await randomDelay();
-      }
-
-      // Yield remaining — always yield partial results even on abort
-      if (batch.length > 0) {
-        yield batch;
-      }
-    } catch (err) {
-      if (!signal.aborted) {
-        log.error("google maps scraper error", {
-          job_id: job.job_id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        throw err;
-      }
-    } finally {
-      if (browser) {
-        await browser.close().catch(() => {});
-      }
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -312,4 +405,8 @@ export class GoogleMapsScraper extends BaseScraper {
       });
     });
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
