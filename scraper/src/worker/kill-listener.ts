@@ -1,4 +1,5 @@
 import { Redis } from "ioredis";
+import { config } from "../config.js";
 import { log } from "../utils/logger.js";
 
 /**
@@ -13,9 +14,10 @@ export function listenForKill(
 ): { controller: AbortController; cleanup: () => void } {
   const controller = new AbortController();
   const channel = `job_kill`;
+  const tlsOptions = config.redisTlsInsecure ? { rejectUnauthorized: false } : undefined;
   const sub = redisUrl
-    ? new Redis(redisUrl, { maxRetriesPerRequest: null })
-    : new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
+    ? new Redis(redisUrl, { maxRetriesPerRequest: null, tls: tlsOptions })
+    : new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null, tls: tlsOptions });
 
   let cleaned = false;
 

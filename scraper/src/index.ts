@@ -7,12 +7,14 @@ async function main(): Promise<void> {
   log.info("starting scraper service");
 
   // 1. Connect Redis
+  const tlsOptions = config.redisTlsInsecure ? { rejectUnauthorized: false } : undefined;
   const redis = config.redisUrl
-    ? new Redis(config.redisUrl, { maxRetriesPerRequest: null })
+    ? new Redis(config.redisUrl, { maxRetriesPerRequest: null, tls: tlsOptions })
     : new Redis({
         host: config.redisHost,
         port: config.redisPort,
         maxRetriesPerRequest: null,
+        tls: tlsOptions,
       });
 
   redis.on("error", (err: Error) => {
