@@ -63,13 +63,16 @@ export class GoogleMapsScraper extends BaseScraper {
           if (seenNames.has(lead.business_name.toLowerCase())) continue;
           seenNames.add(lead.business_name.toLowerCase());
 
+          // Pull details from the right-side Maps panel (phone/address/website)
+          // because many listings do not expose phone in the feed card text.
+          let enrichedLead = await this.enrichFromMapsDetails(page, lead, job, signal);
+
           // Enrich: visit website for contact info + tech stack
-          if (lead.website_url) {
-            const enriched = await this.enrichLead(lead, signal);
-            batch.push(enriched);
-          } else {
-            batch.push(lead);
+          if (enrichedLead.website_url) {
+            enrichedLead = await this.enrichLead(enrichedLead, job, signal);
           }
+
+          batch.push(enrichedLead);
 
           // Yield batch when full
           if (batch.length >= config.batchSize) {
@@ -168,6 +171,7 @@ export class GoogleMapsScraper extends BaseScraper {
 
   private async enrichLead(
     lead: RawLead,
+    job: ScrapeJob,
     signal: AbortSignal
   ): Promise<RawLead> {
     if (!lead.website_url || signal.aborted) return lead;
@@ -195,9 +199,11 @@ export class GoogleMapsScraper extends BaseScraper {
           lead.email = emails[0];
         }
         if (!lead.phone && phones.length > 0) {
-          const validated = validatePhone(phones[0]);
+          const validated = validatePhone(phones[0], this.defaultCountryForLead(lead, job));
           if (validated?.valid) {
             lead.phone = validated.e164;
+          } else {
+            lead.phone = phones[0];
           }
         }
       }
@@ -211,6 +217,84 @@ export class GoogleMapsScraper extends BaseScraper {
     }
 
     return lead;
+  }
+
+  private async enrichFromMapsDetails(
+    page: Page,
+    lead: RawLead,
+    job: ScrapeJob,
+    signal: AbortSignal
+  ): Promise<RawLead> {
+    if (signal.aborted) return lead;
+
+    try {
+      const cards = await page.$$('div[role="feed"] a[aria-label]');
+      const targetName = lead.business_name.trim().toLowerCase();
+
+      let targetCard: puppeteer.ElementHandle<Element> | null = null;
+      for (const card of cards) {
+        const label = await card.evaluate((el) => (el.getAttribute("aria-label") || "").trim().toLowerCase());
+        if (label === targetName) {
+          targetCard = card;
+          break;
+        }
+      }
+
+      if (!targetCard) return lead;
+
+      await targetCard.click().catch(() => {});
+      await page.waitForSelector('button[data-item-id^="phone:tel:"]', { timeout: 2_500 }).catch(() => {});
+
+      const detail = await page.evaluate(() => {
+        const phoneBtn = document.querySelector('button[data-item-id^="phone:tel:"]') as HTMLButtonElement | null;
+        const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement | null;
+        const addressBtn = document.querySelector('button[data-item-id="address"]') as HTMLButtonElement | null;
+
+        const phoneAria = phoneBtn?.getAttribute("aria-label") ?? "";
+        const phoneText = phoneAria.replace(/^Phone:\s*/i, "").trim() || phoneBtn?.textContent?.trim() || null;
+
+        const addressAria = addressBtn?.getAttribute("aria-label") ?? "";
+        const addressText = addressAria.replace(/^Address:\s*/i, "").trim() || addressBtn?.textContent?.trim() || null;
+
+        return {
+          phone: phoneText,
+          website_url: websiteEl?.href ?? null,
+          address: addressText,
+          source_url: window.location.href || null,
+        };
+      });
+
+      if (!lead.phone && detail.phone) {
+        const validated = validatePhone(detail.phone, this.defaultCountryForLead(lead, job));
+        lead.phone = validated?.valid ? validated.e164 : detail.phone;
+      }
+      if (!lead.website_url && detail.website_url) {
+        lead.website_url = detail.website_url;
+      }
+      if (!lead.address && detail.address) {
+        lead.address = detail.address;
+      }
+      if (!lead.source_url && detail.source_url) {
+        lead.source_url = detail.source_url;
+      }
+    } catch {
+      // Detail extraction failures should not stop the batch.
+    }
+
+    return lead;
+  }
+
+  private defaultCountryForLead(lead: RawLead, job: ScrapeJob): string {
+    const country = (lead.country || "").trim().toUpperCase();
+    if (country.length === 2) return country;
+
+    const city = (lead.city || job.city || "").trim().toLowerCase();
+    const indiaHints = ["india", "bengaluru", "bangalore", "mumbai", "delhi", "hyderabad", "chennai", "pune", "kolkata"];
+    if (indiaHints.some((h) => city.includes(h))) {
+      return "IN";
+    }
+
+    return "US";
   }
 
   private async scrollResults(page: Page): Promise<boolean> {
