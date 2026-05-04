@@ -139,6 +139,29 @@ func (r *CampaignRepo) MarkCompletedIfDone(ctx context.Context, id string) error
 	return err
 }
 
+// MarkFailedIfDone sets campaign status to 'failed' when all jobs are terminal
+// and at least one job failed.
+func (r *CampaignRepo) MarkFailedIfDone(ctx context.Context, id string) error {
+	_, err := postgress.Exec(ctx,
+		`UPDATE campaigns c
+		 SET status = 'failed', updated_at = NOW()
+		 WHERE c.id = $1
+		   AND c.status = 'active'
+		   AND c.jobs_total > 0
+		   AND c.jobs_completed >= c.jobs_total
+		   AND EXISTS (
+			   SELECT 1 FROM scrape_jobs j
+			   WHERE j.campaign_id = c.id AND j.status = 'failed'
+		   )`,
+		id,
+	)
+	if err == nil {
+		redis.Remove(ctx, "campaign:"+id)
+		r.invalidateListCache(ctx)
+	}
+	return err
+}
+
 // CountTodayWithLeads returns the number of campaigns created today that have leads_found > 0
 // or are still active (not yet completed/timed out). Used to enforce daily creation limits.
 func (r *CampaignRepo) CountTodayWithLeads(ctx context.Context) (int, error) {

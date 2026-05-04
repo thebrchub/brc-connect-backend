@@ -153,19 +153,22 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 			continue
 		}
 
-		// If job completed or timed out, increment campaign counters
-		if req.Status == "completed" || req.Status == "timeout" {
+			// Terminal job statuses should advance campaign progress.
+			if req.Status == "completed" || req.Status == "timeout" || req.Status == "failed" {
 			job, err := lr.jobRepo.GetByID(ctx, req.JobID)
 			if err == nil && job != nil {
 				if err := lr.campaignRepo.IncrementOnJobComplete(ctx, job.CampaignID, req.LeadsFound); err != nil {
 					log.Printf("ERROR [lead-recovery] - increment campaign counters failed error=%s", err)
 				}
-				// Mark campaign as completed if all jobs are done
-				if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
-					log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
+					// Mark campaign as failed first (if any job failed), otherwise completed.
+					if err := lr.campaignRepo.MarkFailedIfDone(ctx, job.CampaignID); err != nil {
+						log.Printf("ERROR [lead-recovery] - mark campaign failed failed error=%s", err)
+					}
+					if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
+						log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
 				} else {
 					campaign, cErr := lr.campaignRepo.GetByID(ctx, job.CampaignID)
-					if cErr == nil && campaign != nil && campaign.Status == "completed" {
+						if cErr == nil && campaign != nil && (campaign.Status == "completed" || campaign.Status == "failed") {
 						// If campaign completed with 0 leads, decrement the daily limit counter
 						if campaign.LeadsFound == 0 {
 							key := fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
