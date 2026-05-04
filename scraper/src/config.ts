@@ -18,7 +18,8 @@ export const config = {
   redisHost: env("REDIS_HOST", "localhost"),
   redisPort: envInt("REDIS_PORT", 6379),
   redisPrefix: env("REDIS_PREFIX", "sales"),
-  redisTlsInsecure: envBool("REDIS_TLS_INSECURE", true),
+  redisTlsInsecure: envBool("REDIS_TLS_INSECURE", false),
+  redisUseTls: envBool("REDIS_USE_TLS", false),
 
   concurrency: envInt("CONCURRENCY", 2),
   jobTimeoutMs: envInt("JOB_TIMEOUT_MS", 480_000), // 8 min

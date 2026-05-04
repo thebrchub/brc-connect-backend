@@ -14,7 +14,8 @@ export function listenForKill(
 ): { controller: AbortController; cleanup: () => void } {
   const controller = new AbortController();
   const channel = `job_kill`;
-  const tlsOptions = config.redisTlsInsecure ? { rejectUnauthorized: false } : undefined;
+  const useTls = (redisUrl ? redisUrl.startsWith("rediss://") : false) || config.redisUseTls;
+  const tlsOptions = useTls ? { rejectUnauthorized: !config.redisTlsInsecure } : undefined;
   const sub = redisUrl
     ? new Redis(redisUrl, { maxRetriesPerRequest: null, tls: tlsOptions })
     : new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null, tls: tlsOptions });

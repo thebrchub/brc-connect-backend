@@ -3,11 +3,17 @@ import { config } from "./config.js";
 import { Runner } from "./worker/runner.js";
 import { log } from "./utils/logger.js";
 
+function shouldUseTls(redisUrl: string): boolean {
+  if (!redisUrl) return config.redisUseTls;
+  return redisUrl.startsWith("rediss://") || config.redisUseTls;
+}
+
 async function main(): Promise<void> {
   log.info("starting scraper service");
 
   // 1. Connect Redis
-  const tlsOptions = config.redisTlsInsecure ? { rejectUnauthorized: false } : undefined;
+  const useTls = shouldUseTls(config.redisUrl);
+  const tlsOptions = useTls ? { rejectUnauthorized: !config.redisTlsInsecure } : undefined;
   const redis = config.redisUrl
     ? new Redis(config.redisUrl, { maxRetriesPerRequest: null, tls: tlsOptions })
     : new Redis({
@@ -21,8 +27,22 @@ async function main(): Promise<void> {
     log.error("redis connection error", { error: String(err) });
   });
 
+  await new Promise<void>((resolve, reject) => {
+    const onReady = () => {
+      redis.off("error", onError);
+      resolve();
+    };
+    const onError = (err: Error) => {
+      redis.off("ready", onReady);
+      reject(err);
+    };
+    redis.once("ready", onReady);
+    redis.once("error", onError);
+  });
+
   log.info("redis connected", {
     target: config.redisUrl ? config.redisUrl.replace(/\/\/.*@/, "//***@") : `${config.redisHost}:${config.redisPort}`,
+    tls: useTls,
   });
 
   // 2. Start worker loop (no HTTP — all communication via Redis)
