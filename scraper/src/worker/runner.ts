@@ -1,33 +1,8 @@
 import { Redis } from "ioredis";
+import { spawn } from "node:child_process";
 import { config } from "../config.js";
-import { listenForKill } from "./kill-listener.js";
 import { ScrapeJob } from "../types/job.js";
-import { BaseScraper } from "../scrapers/base.js";
-import { GoogleMapsScraper } from "../scrapers/google-maps.js";
-import { YelpScraper } from "../scrapers/yelp.js";
-import { YellowPagesScraper } from "../scrapers/yellow-pages.js";
-import { GoogleDorksScraper } from "../scrapers/google-dorks.js";
-import { NewDomainsScraper } from "../scrapers/new-domains.js";
-import { RedditScraper } from "../scrapers/reddit.js";
-import { CustomUrlsScraper } from "../scrapers/custom-urls.js";
-import { WebCrawlerScraper } from "../crawler/crawler.js";
-import { LinkedInScraper } from "../scrapers/linkedin.js";
-import { JustDialScraper } from "../scrapers/justdial.js";
 import { log } from "../utils/logger.js";
-
-/** Scraper dispatch map — add new sources here. */
-const scraperMap: Record<string, BaseScraper> = {
-  google_maps: new GoogleMapsScraper(),
-  yelp: new YelpScraper(),
-  yellow_pages: new YellowPagesScraper(),
-  google_dorks: new GoogleDorksScraper(),
-  new_domains: new NewDomainsScraper(),
-  reddit: new RedditScraper(),
-  custom_urls: new CustomUrlsScraper(),
-  web_crawler: new WebCrawlerScraper(),
-  linkedin: new LinkedInScraper(),
-  justdial: new JustDialScraper(),
-};
 
 export class Runner {
   private redis: Redis;
@@ -71,65 +46,39 @@ export class Runner {
     }
   }
 
-  /** Push a status update to Redis for Go to pick up. */
-  private async pushStatus(jobId: string, status: string, error?: string): Promise<void> {
-    const payload = JSON.stringify({ job_id: jobId, status, ...(error ? { error } : {}) });
-    await this.redis.rpush(`${config.redisPrefix}:job_status`, payload);
-  }
-
   private async processJob(job: ScrapeJob, workerId: number): Promise<void> {
-    const scraper = scraperMap[job.source];
-    if (!scraper) {
-      log.error("unknown source, skipping", { source: job.source, job_id: job.job_id });
-      await this.pushStatus(job.job_id, "failed", `unknown source: ${job.source}`);
-      return;
-    }
+    const workerScript = new URL("./job-worker.js", import.meta.url);
 
-    // Set up kill listener + timeout
-    const { controller, cleanup } = listenForKill(
-      config.redisHost,
-      config.redisPort,
-      job.job_id,
-      config.redisUrl || undefined,
-    );
-    const timeout = setTimeout(() => {
-      log.warn("job timed out", { job_id: job.job_id, timeout_ms: config.jobTimeoutMs });
-      controller.abort();
-    }, config.jobTimeoutMs);
+    await new Promise<void>((resolve) => {
+      const child = spawn(process.execPath, [workerScript.pathname], {
+        stdio: ["pipe", "inherit", "inherit"],
+        env: process.env,
+      });
 
-    try {
-      // Notify Go via Redis that job is in progress
-      await this.pushStatus(job.job_id, "in_progress");
+      child.once("error", (err) => {
+        log.error("job worker spawn failed", {
+          worker: workerId,
+          job_id: job.job_id,
+          error: String(err),
+        });
+        resolve();
+      });
 
-      // Run the scraper — it yields batches of leads
-      for await (const rawBatch of scraper.scrape(job, controller.signal)) {
-        if (controller.signal.aborted) break;
+      child.once("exit", (code, signal) => {
+        if (code !== 0) {
+          log.error("job worker exited with error", {
+            worker: workerId,
+            job_id: job.job_id,
+            code: code ?? -1,
+            signal: signal ?? "",
+          });
+        }
+        resolve();
+      });
 
-        // Drop leads without both phone and email if configured
-        const batch = job.drop_no_contact
-          ? rawBatch.filter((l) => l.phone || l.email)
-          : rawBatch;
-        if (batch.length === 0) continue;
-
-        // Push leads to Redis queue for Go to process
-        const payload = JSON.stringify({ job_id: job.job_id, leads: batch });
-        await this.redis.rpush(`${config.redisPrefix}:lead_batches`, payload);
-        log.info("leads pushed to Redis", { job_id: job.job_id, count: batch.length });
-      }
-
-      if (controller.signal.aborted) {
-        await this.pushStatus(job.job_id, "timeout");
-      } else {
-        await this.pushStatus(job.job_id, "completed");
-      }
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      log.error("job failed", { job_id: job.job_id, error: msg });
-      await this.pushStatus(job.job_id, "failed", msg).catch(() => {});
-    } finally {
-      clearTimeout(timeout);
-      cleanup();
-    }
+      child.stdin.write(JSON.stringify(job));
+      child.stdin.end();
+    });
   }
 }
 
