@@ -122,6 +122,33 @@ func (r *CampaignRepo) IncrementOnJobComplete(ctx context.Context, id string, le
 	return err
 }
 
+// SyncProgressFromJobs recomputes campaign counters from scrape_jobs.
+// This keeps counters idempotent across retries and repeated status events.
+func (r *CampaignRepo) SyncProgressFromJobs(ctx context.Context, id string) error {
+	_, err := postgress.Exec(ctx,
+		`UPDATE campaigns c
+		 SET leads_found = COALESCE((
+			SELECT SUM(j.leads_found)
+			FROM scrape_jobs j
+			WHERE j.campaign_id = c.id
+		 ), 0),
+		 jobs_completed = COALESCE((
+			SELECT COUNT(*)
+			FROM scrape_jobs j
+			WHERE j.campaign_id = c.id
+			  AND j.status IN ('completed', 'timeout', 'failed', 'dead')
+		 ), 0),
+		 updated_at = NOW()
+		 WHERE c.id = $1`,
+		id,
+	)
+	if err == nil {
+		redis.Remove(ctx, "campaign:"+id)
+		r.invalidateListCache(ctx)
+	}
+	return err
+}
+
 func (r *CampaignRepo) GetAutoRescrape(ctx context.Context) ([]models.Campaign, error) {
 	return postgress.Query[models.Campaign](ctx, "SELECT * FROM campaigns WHERE auto_rescrape = true AND status = 'active'")
 }

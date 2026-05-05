@@ -70,7 +70,6 @@ type LeadBatchResponse struct {
 
 // JobStatusRequest is the body of POST /internal/jobs/{id}/status.
 type JobStatusRequest struct {
-	Status     string `json:"status"`
-	LeadsFound int    `json:"leads_found"`
-	Error      string `json:"error,omitempty"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }

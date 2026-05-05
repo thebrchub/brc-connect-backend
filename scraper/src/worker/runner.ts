@@ -72,8 +72,8 @@ export class Runner {
   }
 
   /** Push a status update to Redis for Go to pick up. */
-  private async pushStatus(jobId: string, status: string, leadsFound: number, error?: string): Promise<void> {
-    const payload = JSON.stringify({ job_id: jobId, status, leads_found: leadsFound, ...(error ? { error } : {}) });
+  private async pushStatus(jobId: string, status: string, error?: string): Promise<void> {
+    const payload = JSON.stringify({ job_id: jobId, status, ...(error ? { error } : {}) });
     await this.redis.rpush(`${config.redisPrefix}:job_status`, payload);
   }
 
@@ -81,7 +81,7 @@ export class Runner {
     const scraper = scraperMap[job.source];
     if (!scraper) {
       log.error("unknown source, skipping", { source: job.source, job_id: job.job_id });
-      await this.pushStatus(job.job_id, "failed", 0, `unknown source: ${job.source}`);
+      await this.pushStatus(job.job_id, "failed", `unknown source: ${job.source}`);
       return;
     }
 
@@ -97,11 +97,9 @@ export class Runner {
       controller.abort();
     }, config.jobTimeoutMs);
 
-    let totalLeads = 0;
-
     try {
       // Notify Go via Redis that job is in progress
-      await this.pushStatus(job.job_id, "in_progress", 0);
+      await this.pushStatus(job.job_id, "in_progress");
 
       // Run the scraper — it yields batches of leads
       for await (const rawBatch of scraper.scrape(job, controller.signal)) {
@@ -116,19 +114,18 @@ export class Runner {
         // Push leads to Redis queue for Go to process
         const payload = JSON.stringify({ job_id: job.job_id, leads: batch });
         await this.redis.rpush(`${config.redisPrefix}:lead_batches`, payload);
-        totalLeads += batch.length;
-        log.info("leads pushed to Redis", { job_id: job.job_id, count: batch.length, total: totalLeads });
+        log.info("leads pushed to Redis", { job_id: job.job_id, count: batch.length });
       }
 
       if (controller.signal.aborted) {
-        await this.pushStatus(job.job_id, "timeout", totalLeads);
+        await this.pushStatus(job.job_id, "timeout");
       } else {
-        await this.pushStatus(job.job_id, "completed", totalLeads);
+        await this.pushStatus(job.job_id, "completed");
       }
     } catch (err: any) {
       const msg = err?.message || String(err);
       log.error("job failed", { job_id: job.job_id, error: msg });
-      await this.pushStatus(job.job_id, "failed", totalLeads, msg).catch(() => {});
+      await this.pushStatus(job.job_id, "failed", msg).catch(() => {});
     } finally {
       clearTimeout(timeout);
       cleanup();

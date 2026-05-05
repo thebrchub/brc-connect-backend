@@ -102,6 +102,11 @@ func (lr *LeadRecovery) drainLeads(ctx context.Context) {
 		}
 
 		result := lr.leadSvc.ProcessBatch(ctx, batch.JobID, batch.Leads)
+		if result.Inserted > 0 {
+			if err := lr.jobRepo.IncrementLeadsFound(ctx, batch.JobID, result.Inserted); err != nil {
+				log.Printf("ERROR [lead-recovery] - increment job leads failed job_id=%s inserted=%d error=%s", batch.JobID, result.Inserted, err)
+			}
+		}
 
 		// If all leads were skipped due to errors, requeue
 		if result.Inserted == 0 && result.Merged == 0 && result.Skipped == len(batch.Leads) {
@@ -133,17 +138,16 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 		raw, attempt := unwrap(payload)
 
 		var req struct {
-			JobID      string `json:"job_id"`
-			Status     string `json:"status"`
-			LeadsFound int    `json:"leads_found"`
-			Error      string `json:"error,omitempty"`
+			JobID  string `json:"job_id"`
+			Status string `json:"status"`
+			Error  string `json:"error,omitempty"`
 		}
 		if err := json.Unmarshal(raw, &req); err != nil {
 			log.Printf("ERROR [lead-recovery] - unmarshal job status failed, dropping error=%s", err)
 			continue
 		}
 
-		if err := lr.jobRepo.UpdateStatus(ctx, req.JobID, req.Status, req.LeadsFound, req.Error); err != nil {
+		if err := lr.jobRepo.UpdateStatus(ctx, req.JobID, req.Status, req.Error); err != nil {
 			log.Printf("ERROR [lead-recovery] - update job status failed job_id=%s error=%s", req.JobID, err)
 			if requeue(ctx, "job_status", raw, attempt) {
 				log.Printf("WARN  [lead-recovery] - job status requeued job_id=%s attempt=%d/%d", req.JobID, attempt+1, maxRetryAttempts)
@@ -153,22 +157,22 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 			continue
 		}
 
-			// Terminal job statuses should advance campaign progress.
-			if req.Status == "completed" || req.Status == "timeout" || req.Status == "failed" {
+		// Terminal job statuses should advance campaign progress.
+		if req.Status == "completed" || req.Status == "timeout" || req.Status == "failed" {
 			job, err := lr.jobRepo.GetByID(ctx, req.JobID)
 			if err == nil && job != nil {
-				if err := lr.campaignRepo.IncrementOnJobComplete(ctx, job.CampaignID, req.LeadsFound); err != nil {
-					log.Printf("ERROR [lead-recovery] - increment campaign counters failed error=%s", err)
+				if err := lr.campaignRepo.SyncProgressFromJobs(ctx, job.CampaignID); err != nil {
+					log.Printf("ERROR [lead-recovery] - sync campaign counters failed error=%s", err)
 				}
-					// Mark campaign as failed first (if any job failed), otherwise completed.
-					if err := lr.campaignRepo.MarkFailedIfDone(ctx, job.CampaignID); err != nil {
-						log.Printf("ERROR [lead-recovery] - mark campaign failed failed error=%s", err)
-					}
-					if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
-						log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
+				// Mark campaign as failed first (if any job failed), otherwise completed.
+				if err := lr.campaignRepo.MarkFailedIfDone(ctx, job.CampaignID); err != nil {
+					log.Printf("ERROR [lead-recovery] - mark campaign failed failed error=%s", err)
+				}
+				if err := lr.campaignRepo.MarkCompletedIfDone(ctx, job.CampaignID); err != nil {
+					log.Printf("ERROR [lead-recovery] - mark campaign completed failed error=%s", err)
 				} else {
 					campaign, cErr := lr.campaignRepo.GetByID(ctx, job.CampaignID)
-						if cErr == nil && campaign != nil && (campaign.Status == "completed" || campaign.Status == "failed") {
+					if cErr == nil && campaign != nil && (campaign.Status == "completed" || campaign.Status == "failed") {
 						// If campaign completed with 0 leads, decrement the daily limit counter
 						if campaign.LeadsFound == 0 {
 							key := fmt.Sprintf("campaign_limit:%s", time.Now().UTC().Format("2006-01-02"))
@@ -188,7 +192,6 @@ func (lr *LeadRecovery) drainJobStatus(ctx context.Context) {
 			}
 		}
 
-		log.Printf("INFO  [lead-recovery] - job status updated job_id=%s status=%s leads=%d",
-			req.JobID, req.Status, req.LeadsFound)
+		log.Printf("INFO  [lead-recovery] - job status updated job_id=%s status=%s", req.JobID, req.Status)
 	}
 }

@@ -42,11 +42,11 @@ func (r *JobRepo) GetByID(ctx context.Context, id string) (*models.ScrapeJob, er
 	return &job, nil
 }
 
-func (r *JobRepo) UpdateStatus(ctx context.Context, id, status string, leadsFound int, lastError string) error {
+func (r *JobRepo) UpdateStatus(ctx context.Context, id, status string, lastError string) error {
 	now := time.Now()
-	sql := "UPDATE scrape_jobs SET status = $1, leads_found = $2, updated_at = $3"
-	args := []any{status, leadsFound, now}
-	argIdx := 4
+	sql := "UPDATE scrape_jobs SET status = $1, updated_at = $2"
+	args := []any{status, now}
+	argIdx := 3
 
 	if status == "completed" || status == "timeout" {
 		sql += fmt.Sprintf(", completed_at = $%d", argIdx)
@@ -73,6 +73,18 @@ func (r *JobRepo) UpdateStatus(ctx context.Context, id, status string, leadsFoun
 	args = append(args, id)
 
 	_, err := postgress.Exec(ctx, sql, args...)
+	return err
+}
+
+// IncrementLeadsFound adds deduped inserted leads for a job.
+func (r *JobRepo) IncrementLeadsFound(ctx context.Context, id string, count int) error {
+	if count <= 0 {
+		return nil
+	}
+	_, err := postgress.Exec(ctx,
+		"UPDATE scrape_jobs SET leads_found = leads_found + $1, updated_at = NOW() WHERE id = $2",
+		count, id,
+	)
 	return err
 }
 
