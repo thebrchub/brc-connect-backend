@@ -200,3 +200,41 @@ func (h *CampaignHandler) AssignCampaign(w http.ResponseWriter, r *http.Request)
 
 	helper.JSON(w, http.StatusOK, map[string]string{"status": "assigned"})
 }
+
+// DeleteCampaign handles DELETE /campaigns/{id} — admin deletes own campaign and associated leads.
+func (h *CampaignHandler) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.Subject(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		helper.Error(w, http.StatusBadRequest, "missing campaign id")
+		return
+	}
+
+	// Verify campaign belongs to this admin
+	campaign, err := h.campaignSvc.GetStatus(r.Context(), id)
+	if err != nil {
+		log.Printf("ERROR [campaign] - delete fetch failed id=%s error=%s", id, err)
+		helper.Error(w, http.StatusInternalServerError, "failed to fetch campaign")
+		return
+	}
+	if campaign == nil {
+		helper.Error(w, http.StatusNotFound, "campaign not found")
+		return
+	}
+	if campaign.AdminID == nil || *campaign.AdminID != adminID {
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	deletedLeads, err := h.campaignSvc.DeleteByAdmin(r.Context(), id, adminID)
+	if err != nil {
+		log.Printf("ERROR [campaign] - delete failed id=%s error=%s", id, err)
+		helper.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+
+	helper.JSON(w, http.StatusOK, map[string]any{
+		"status":        "deleted",
+		"deleted_leads": deletedLeads,
+	})
+}

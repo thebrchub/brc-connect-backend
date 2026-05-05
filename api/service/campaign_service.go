@@ -145,3 +145,8 @@ func (s *CampaignService) AssignEmployee(ctx context.Context, campaignID, employ
 	}
 	return s.activityRepo.PopulateForCampaign(ctx, employeeID, campaignID)
 }
+
+// DeleteByAdmin removes a campaign and associated leads owned by admin.
+func (s *CampaignService) DeleteByAdmin(ctx context.Context, campaignID, adminID string) (int, error) {
+	return s.campaignRepo.DeleteByAdmin(ctx, campaignID, adminID)
+}

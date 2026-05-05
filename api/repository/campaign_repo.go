@@ -304,3 +304,64 @@ func (r *CampaignRepo) AssignEmployee(ctx context.Context, campaignID, employeeI
 	redis.Remove(ctx, "campaign:"+campaignID)
 	return nil
 }
+
+// DeleteByAdmin deletes a campaign owned by adminID and removes associated leads.
+// Association is inferred by the campaign's city/category job targeting for that admin.
+func (r *CampaignRepo) DeleteByAdmin(ctx context.Context, campaignID, adminID string) (int, error) {
+	rows, err := postgress.Query[struct {
+		CampaignCount int `db:"campaign_count"`
+		LeadCount     int `db:"lead_count"`
+	}](ctx, `
+		WITH target_campaign AS (
+			SELECT id, admin_id
+			FROM campaigns
+			WHERE id = $1 AND admin_id = $2
+		),
+		campaign_jobs AS (
+			SELECT DISTINCT LOWER(city) AS city, LOWER(category) AS category
+			FROM scrape_jobs
+			WHERE campaign_id = (SELECT id FROM target_campaign)
+		),
+		deleted_activities AS (
+			DELETE FROM lead_activities
+			WHERE campaign_id = (SELECT id FROM target_campaign)
+		),
+		deleted_leads AS (
+			DELETE FROM leads l
+			WHERE l.admin_id = (SELECT admin_id FROM target_campaign)
+			  AND EXISTS (
+				SELECT 1 FROM campaign_jobs cj
+				WHERE LOWER(l.city) = cj.city
+				  AND LOWER(l.category) = cj.category
+			  )
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM campaigns c2
+				JOIN scrape_jobs sj2 ON sj2.campaign_id = c2.id
+				WHERE c2.id <> (SELECT id FROM target_campaign)
+				  AND c2.admin_id = (SELECT admin_id FROM target_campaign)
+				  AND LOWER(sj2.city) = LOWER(l.city)
+				  AND LOWER(sj2.category) = LOWER(l.category)
+			  )
+			RETURNING l.id
+		),
+		deleted_campaign AS (
+			DELETE FROM campaigns
+			WHERE id = (SELECT id FROM target_campaign)
+			RETURNING id
+		)
+		SELECT
+			(SELECT COUNT(*) FROM deleted_campaign) AS campaign_count,
+			(SELECT COUNT(*) FROM deleted_leads) AS lead_count
+	`, campaignID, adminID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 || rows[0].CampaignCount == 0 {
+		return 0, nil
+	}
+
+	r.invalidateListCache(ctx)
+	redis.Remove(ctx, "campaign:"+campaignID)
+	return rows[0].LeadCount, nil
+}
