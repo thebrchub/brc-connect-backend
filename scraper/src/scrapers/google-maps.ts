@@ -36,8 +36,6 @@ export class GoogleMapsScraper extends BaseScraper {
             "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-crashpad",
-            "--no-zygote",
-            "--single-process",
           ],
         });
 
@@ -48,9 +46,12 @@ export class GoogleMapsScraper extends BaseScraper {
         const query = encodeURIComponent(`${job.category} ${job.city}`);
         log.info("navigating to google maps", { job_id: job.job_id, query: `${job.category} ${job.city}` });
         await page.goto(`${MAPS_URL}${query}`, {
-          waitUntil: "networkidle2",
+          waitUntil: "domcontentloaded",
           timeout: 30_000,
         });
+
+        // Allow Maps JS to load after DOM is ready
+        await sleep(3000);
 
         // Wait for results panel to load
         await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
@@ -206,10 +207,11 @@ export class GoogleMapsScraper extends BaseScraper {
       });
 
       await page.goto(`${MAPS_URL}${encodedQuery}`, {
-        waitUntil: "networkidle2",
+        waitUntil: "domcontentloaded",
         timeout: 30_000,
       });
 
+      await sleep(3000);
       await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
       return true;
     } catch (err) {

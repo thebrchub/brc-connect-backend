@@ -29,4 +29,6 @@ Thumbs.db
 *.cjs
 *.mjs
 
+tmp*
+
 scripts/
