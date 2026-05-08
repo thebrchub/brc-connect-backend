@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
 import { ScrapeJob } from "../types/job.js";
 import { log } from "../utils/logger.js";
@@ -47,10 +48,10 @@ export class Runner {
   }
 
   private async processJob(job: ScrapeJob, workerId: number): Promise<void> {
-    const workerScript = new URL("./job-worker.js", import.meta.url);
+    const workerScript = fileURLToPath(new URL("./job-worker.js", import.meta.url));
 
     await new Promise<void>((resolve) => {
-      const child = spawn(process.execPath, [workerScript.pathname], {
+      const child = spawn(process.execPath, [workerScript], {
         stdio: ["pipe", "inherit", "inherit"],
         env: process.env,
       });
