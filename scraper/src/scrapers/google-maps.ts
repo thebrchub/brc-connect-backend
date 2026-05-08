@@ -60,9 +60,11 @@ export class GoogleMapsScraper extends BaseScraper {
         let batch: RawLead[] = [];
         const seenNames = new Set<string>();
         let scrollAttempts = 0;
-        const maxScrollAttempts = 30;
+        const maxScrollAttempts = 50;
         let loopRecoveries = 0;
         const maxLoopRecoveries = 2;
+        let staleScrolls = 0;
+        const maxStaleScrolls = 3;
 
         while (scrollAttempts < maxScrollAttempts && !signal.aborted) {
           // Extract visible results
@@ -138,9 +140,16 @@ export class GoogleMapsScraper extends BaseScraper {
           }
 
           if (!scrolled) {
-            log.info("no more results to scroll", { job_id: job.job_id, total_seen: seenNames.size });
-            break;
+            staleScrolls++;
+            if (staleScrolls >= maxStaleScrolls) {
+              log.info("no more results to scroll", { job_id: job.job_id, total_seen: seenNames.size });
+              break;
+            }
+            log.info("stale scroll, retrying", { job_id: job.job_id, stale_attempt: staleScrolls, total_seen: seenNames.size });
+            await sleep(2000);
+            continue;
           }
+          staleScrolls = 0;
           scrollAttempts++;
           log.info("scrolled for more results", { job_id: job.job_id, scroll_attempt: scrollAttempts });
 
@@ -417,13 +426,34 @@ export class GoogleMapsScraper extends BaseScraper {
       const feed = document.querySelector('div[role="feed"]');
       if (!feed) return false;
 
+      // Check for "end of list" indicator
+      const feedText = feed.textContent?.toLowerCase() ?? "";
+      if (feedText.includes("you've reached the end of the list")) {
+        return false;
+      }
+
       const prevHeight = feed.scrollHeight;
+      const prevCount = feed.querySelectorAll(':scope > div > div > a[aria-label]').length;
       feed.scrollTo(0, feed.scrollHeight);
 
       return new Promise<boolean>((resolve) => {
-        setTimeout(() => {
-          resolve(feed.scrollHeight > prevHeight);
-        }, 2000);
+        // Wait up to 5s, checking every 500ms for new content
+        let checks = 0;
+        const maxChecks = 10;
+        const interval = setInterval(() => {
+          checks++;
+          const newHeight = feed.scrollHeight;
+          const newCount = feed.querySelectorAll(':scope > div > div > a[aria-label]').length;
+          if (newHeight > prevHeight || newCount > prevCount) {
+            clearInterval(interval);
+            resolve(true);
+          } else if (checks >= maxChecks) {
+            clearInterval(interval);
+            // Final check for end-of-list after scrolling
+            const text = feed.textContent?.toLowerCase() ?? "";
+            resolve(!text.includes("you've reached the end of the list") && false);
+          }
+        }, 500);
       });
     });
   }
