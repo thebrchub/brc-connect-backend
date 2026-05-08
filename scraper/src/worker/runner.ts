@@ -48,12 +48,22 @@ export class Runner {
   }
 
   private async processJob(job: ScrapeJob, workerId: number): Promise<void> {
-    const workerScript = fileURLToPath(new URL("./job-worker.js", import.meta.url));
+    // Detect whether we're running via tsx (.ts) or compiled (.js)
+    const currentFile = fileURLToPath(import.meta.url);
+    const isTsx = currentFile.endsWith(".ts");
+    const ext = isTsx ? ".ts" : ".js";
+    const workerScript = fileURLToPath(new URL(`./job-worker${ext}`, import.meta.url));
+
+    // When running via tsx, we need to spawn the child with tsx too
+    // since node.exe can't run .ts files directly
+    const cmd = isTsx ? "npx" : process.execPath;
+    const args = isTsx ? ["tsx", workerScript] : [workerScript];
 
     await new Promise<void>((resolve) => {
-      const child = spawn(process.execPath, [workerScript], {
+      const child = spawn(cmd, args, {
         stdio: ["pipe", "inherit", "inherit"],
         env: process.env,
+        shell: isTsx,
       });
 
       child.once("error", (err) => {
