@@ -67,8 +67,12 @@ func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads [
 		}
 		domain := ExtractDomain(websiteURL)
 
-		// Dedup check
-		existingID, err := s.dedup.FindDuplicate(ctx, phone, email, websiteURL)
+		// Dedup check (scoped to admin for multi-tenant isolation)
+		adminIDStr := ""
+		if adminID != nil {
+			adminIDStr = *adminID
+		}
+		existingID, err := s.dedup.FindDuplicate(ctx, adminIDStr, phone, email, websiteURL)
 		if err != nil {
 			log.Printf("ERROR [lead-service] - dedup check failed error=%s", err)
 			skipped++

@@ -20,8 +20,9 @@ func NewDedupService(leadRepo *repository.LeadRepo) *DedupService {
 }
 
 // FindDuplicate checks phone, email, and domain for an existing lead in a single query.
+// Scoped to adminID for multi-tenant isolation.
 // Returns the existing lead ID if found, empty string otherwise.
-func (d *DedupService) FindDuplicate(ctx context.Context, phone, email, websiteURL string) (string, error) {
+func (d *DedupService) FindDuplicate(ctx context.Context, adminID, phone, email, websiteURL string) (string, error) {
 	domain := ExtractDomain(websiteURL)
 
 	// Skip if nothing to check
@@ -33,6 +34,14 @@ func (d *DedupService) FindDuplicate(ctx context.Context, phone, email, websiteU
 	conditions := []string{}
 	args := []any{}
 	argIdx := 1
+
+	// Scope to admin for multi-tenant isolation
+	adminFilter := ""
+	if adminID != "" {
+		adminFilter = fmt.Sprintf("admin_id = $%d AND ", argIdx)
+		args = append(args, adminID)
+		argIdx++
+	}
 
 	if phone != "" {
 		conditions = append(conditions, fmt.Sprintf("phone_e164 = $%d", argIdx))
@@ -50,7 +59,7 @@ func (d *DedupService) FindDuplicate(ctx context.Context, phone, email, websiteU
 		argIdx++
 	}
 
-	sql := fmt.Sprintf("SELECT id FROM leads WHERE %s LIMIT 1", strings.Join(conditions, " OR "))
+	sql := fmt.Sprintf("SELECT id FROM leads WHERE %s(%s) LIMIT 1", adminFilter, strings.Join(conditions, " OR "))
 	type idRow struct {
 		ID string `db:"id"`
 	}
