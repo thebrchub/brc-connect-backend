@@ -20,10 +20,13 @@ export class GoogleMapsScraper extends BaseScraper {
     job: ScrapeJob,
     signal: AbortSignal
   ): AsyncGenerator<RawLead[], void, unknown> {
+    log.info("starting google maps scrape", { job_id: job.job_id, category: job.category, city: job.city });
+
     for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES && !signal.aborted; attempt++) {
       let browser: Browser | null = null;
 
       try {
+        log.info("launching browser", { job_id: job.job_id, attempt: attempt + 1 });
         browser = await puppeteer.launch({
           headless: true,
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -43,6 +46,7 @@ export class GoogleMapsScraper extends BaseScraper {
         await page.setViewport({ width: 1280, height: 900 });
 
         const query = encodeURIComponent(`${job.category} ${job.city}`);
+        log.info("navigating to google maps", { job_id: job.job_id, query: `${job.category} ${job.city}` });
         await page.goto(`${MAPS_URL}${query}`, {
           waitUntil: "networkidle2",
           timeout: 30_000,
@@ -50,6 +54,7 @@ export class GoogleMapsScraper extends BaseScraper {
 
         // Wait for results panel to load
         await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
+        log.info("results panel loaded, starting extraction", { job_id: job.job_id });
 
         let batch: RawLead[] = [];
         const seenNames = new Set<string>();
@@ -65,6 +70,7 @@ export class GoogleMapsScraper extends BaseScraper {
             results = await this.extractResults(page, job);
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);
+            log.error("extractResults failed", { job_id: job.job_id, error: errorMsg });
             const canRecover =
               this.isTransientBrowserError(errorMsg) &&
               loopRecoveries < maxLoopRecoveries;
@@ -80,6 +86,8 @@ export class GoogleMapsScraper extends BaseScraper {
             }
             continue;
           }
+
+          log.info("extracted results from page", { job_id: job.job_id, new_results: results.length, total_seen: seenNames.size, scroll: scrollAttempts });
 
           for (const lead of results) {
             if (signal.aborted) break;
@@ -99,6 +107,7 @@ export class GoogleMapsScraper extends BaseScraper {
 
             // Yield batch when full
             if (batch.length >= config.batchSize) {
+              log.info("yielding batch", { job_id: job.job_id, batch_size: batch.length, total_seen: seenNames.size });
               yield batch;
               batch = [];
             }
@@ -110,6 +119,7 @@ export class GoogleMapsScraper extends BaseScraper {
             scrolled = await this.scrollResults(page);
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);
+            log.error("scrollResults failed", { job_id: job.job_id, error: errorMsg });
             const canRecover =
               this.isTransientBrowserError(errorMsg) &&
               loopRecoveries < maxLoopRecoveries;
@@ -126,16 +136,22 @@ export class GoogleMapsScraper extends BaseScraper {
             continue;
           }
 
-          if (!scrolled) break; // no more results
+          if (!scrolled) {
+            log.info("no more results to scroll", { job_id: job.job_id, total_seen: seenNames.size });
+            break;
+          }
           scrollAttempts++;
+          log.info("scrolled for more results", { job_id: job.job_id, scroll_attempt: scrollAttempts });
 
           await randomDelay();
         }
 
         // Yield remaining — always yield partial results even on abort
         if (batch.length > 0) {
+          log.info("yielding final batch", { job_id: job.job_id, batch_size: batch.length, total_seen: seenNames.size });
           yield batch;
         }
+        log.info("scrape complete", { job_id: job.job_id, total_leads: seenNames.size });
         return;
       } catch (err) {
         if (signal.aborted) {
@@ -196,7 +212,9 @@ export class GoogleMapsScraper extends BaseScraper {
 
       await page.waitForSelector('div[role="feed"]', { timeout: 15_000 }).catch(() => {});
       return true;
-    } catch {
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log.error("recoverMapsPage failed", { job_id: jobId, error: errorMsg });
       return false;
     }
   }
@@ -305,8 +323,9 @@ export class GoogleMapsScraper extends BaseScraper {
         lead.tech_stack = techStack;
       }
       lead.has_ssl = await hasSSL(lead.website_url);
-    } catch {
-      // enrichment failure is not fatal — proceed with what we have
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log.error("enrichLead failed", { business: lead.business_name, url: lead.website_url, error: errorMsg });
     }
 
     return lead;
@@ -370,8 +389,9 @@ export class GoogleMapsScraper extends BaseScraper {
       if (!lead.source_url && detail.source_url) {
         lead.source_url = detail.source_url;
       }
-    } catch {
-      // Detail extraction failures should not stop the batch.
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log.error("enrichFromMapsDetails failed", { business: lead.business_name, error: errorMsg });
     }
 
     return lead;
