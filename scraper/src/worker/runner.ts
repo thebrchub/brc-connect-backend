@@ -54,16 +54,16 @@ export class Runner {
     const ext = isTsx ? ".ts" : ".js";
     const workerScript = fileURLToPath(new URL(`./job-worker${ext}`, import.meta.url));
 
-    // When running via tsx, we need to spawn the child with tsx too
-    // since node.exe can't run .ts files directly
-    const cmd = isTsx ? "npx" : process.execPath;
-    const args = isTsx ? ["tsx", workerScript] : [workerScript];
+    // When running via tsx, use node --import tsx to register the loader
+    // This avoids shell: true which breaks on paths with spaces
+    const args = isTsx
+      ? ["--import", "tsx", workerScript]
+      : [workerScript];
 
     await new Promise<void>((resolve) => {
-      const child = spawn(cmd, args, {
+      const child = spawn(process.execPath, args, {
         stdio: ["pipe", "inherit", "inherit"],
         env: process.env,
-        shell: isTsx,
       });
 
       child.once("error", (err) => {
