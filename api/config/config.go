@@ -7,14 +7,8 @@ import (
 )
 
 type Config struct {
-	Port      string
-	Host      string
-	DBUrl     string
-	DBTimeout int
-
-	RedisName string
-	RedisHost string
-	RedisPort int
+	Port string
+	Host string
 
 	SuperAdminEmail string
 	SuperAdminPass  string
@@ -40,18 +34,16 @@ type Config struct {
 	MemoryLimitMB      int
 	ShutdownTimeout    int
 	DailyCampaignLimit int
+
+	// Chat (app-specific only — engine config is read by the kit)
+	CacheRoomTTL         time.Duration
+	MessageRetentionDays int
 }
 
 func Load() Config {
 	return Config{
-		Port:      helper.GetEnv("PORT", "8080"),
-		Host:      helper.GetEnv("HOST", "0.0.0.0"),
-		DBUrl:     helper.GetEnv("DATABASE_URL", ""),
-		DBTimeout: helper.GetEnvInt("DB_TIMEOUT", 5),
-
-		RedisName: helper.GetEnv("REDIS_NAME", "sales"),
-		RedisHost: helper.GetEnv("REDIS_HOST", "localhost"),
-		RedisPort: helper.GetEnvInt("REDIS_PORT", 6379),
+		Port: helper.GetEnv("PORT", "8080"),
+		Host: helper.GetEnv("HOST", "0.0.0.0"),
 
 		SuperAdminEmail: helper.GetEnv("SUPER_ADMIN_EMAIL", "admin@brc.com"),
 		SuperAdminPass:  helper.GetEnv("SUPER_ADMIN_PASS", ""),
@@ -77,5 +69,9 @@ func Load() Config {
 		MemoryLimitMB:      helper.GetEnvInt("MEMORY_LIMIT_MB", 256),
 		ShutdownTimeout:    helper.GetEnvInt("SHUTDOWN_TIMEOUT_SEC", 15),
 		DailyCampaignLimit: helper.GetEnvInt("DAILY_CAMPAIGN_LIMIT", 5),
+
+		// Chat (app-specific only)
+		CacheRoomTTL:         time.Duration(helper.GetEnvInt("CACHE_ROOM_TTL_SEC", 120)) * time.Second,
+		MessageRetentionDays: helper.GetEnvInt("MESSAGE_RETENTION_DAYS", 15),
 	}
 }

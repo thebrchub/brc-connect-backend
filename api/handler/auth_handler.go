@@ -59,9 +59,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"access_token":  access,
 		"refresh_token": refresh,
 		"user": map[string]any{
-			"id":   user.ID,
-			"name": user.Name,
-			"role": user.Role,
+			"id":         user.ID,
+			"name":       user.Name,
+			"role":       user.Role,
+			"avatar_url": user.AvatarURL,
 		},
 	})
 }

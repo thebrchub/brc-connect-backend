@@ -5,17 +5,18 @@ import (
 	"time"
 
 	"github.com/shivanand-burli/go-starter-kit/middleware"
+	"github.com/shivanand-burli/go-starter-kit/rtc"
 
 	"brc-connect-backend/api/config"
 	"brc-connect-backend/api/handler"
 )
 
-func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandler, campaignH *handler.CampaignHandler, exportH *handler.ExportHandler, progressH *handler.ProgressHandler, userH *handler.UserHandler, crmH *handler.CRMHandler) (http.Handler, *middleware.IPRateLimiter) {
+func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandler, campaignH *handler.CampaignHandler, exportH *handler.ExportHandler, progressH *handler.ProgressHandler, userH *handler.UserHandler, crmH *handler.CRMHandler, chatH *handler.ChatHandler, gcH *handler.GroupCallHandler, rtcClient *rtc.Client) (http.Handler, *middleware.IPRateLimiter) {
 	mux := http.NewServeMux()
 	auth := middleware.Auth("")
-	superAdmin := middleware.RequireRole("super_admin")
-	admin := middleware.RequireRole("admin")
-	employee := middleware.RequireRole("employee")
+	superAdmin := middleware.RequireRole(middleware.RoleSuperAdmin)
+	admin := middleware.RequireRole(middleware.RoleAdmin)
+	employee := middleware.RequireRole(middleware.RoleEmployee)
 
 	// Public — no auth
 	mux.HandleFunc("POST /auth/login", authH.Login)
@@ -64,6 +65,46 @@ func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandl
 	mux.HandleFunc("GET /crm/employees/{id}/stats", middleware.Chain(crmH.GetEmployeeStats, auth, admin))
 	mux.HandleFunc("GET /crm/employees/{id}/engagement", middleware.Chain(crmH.GetEmployeeEngagement, auth, admin))
 	mux.HandleFunc("GET /crm/dashboard/engagement", middleware.Chain(crmH.GetDashboardEngagement, auth, admin))
+
+	// Chat — WebSocket + REST
+	mux.HandleFunc("GET /ws", middleware.Chain(chatH.HandleWS, auth))
+
+	// Profile — any authenticated user
+	mux.HandleFunc("GET /profile", middleware.Chain(userH.GetProfile, auth))
+	mux.HandleFunc("PATCH /profile", middleware.Chain(userH.UpdateProfile, auth))
+	mux.HandleFunc("POST /profile/avatar", middleware.Chain(userH.UploadAvatar, auth))
+	mux.HandleFunc("GET /profile/avatar", middleware.Chain(userH.AvatarURL, auth))
+
+	mux.HandleFunc("GET /chat/rooms", middleware.Chain(chatH.GetRooms, auth))
+	mux.HandleFunc("POST /chat/rooms/dm", middleware.Chain(chatH.CreateDM, auth))
+	mux.HandleFunc("GET /chat/rooms/{id}/messages", middleware.Chain(chatH.GetMessages, auth))
+	mux.HandleFunc("PATCH /chat/messages/{id}", middleware.Chain(chatH.EditMessage, auth))
+	mux.HandleFunc("DELETE /chat/messages/{id}", middleware.Chain(chatH.DeleteMessage, auth))
+	mux.HandleFunc("GET /chat/calls", middleware.Chain(chatH.GetCallHistory, auth))
+	mux.HandleFunc("GET /chat/calls/active", middleware.Chain(gcH.GetActiveCalls, auth))
+	mux.HandleFunc("GET /chat/calls/config", middleware.Chain(rtc.HandleCallConfig(rtcClient), auth))
+	mux.HandleFunc("POST /chat/upload", middleware.Chain(chatH.UploadFile, auth))
+	mux.HandleFunc("GET /chat/file", middleware.Chain(chatH.FileURL, auth))
+	mux.HandleFunc("GET /chat/messages/search", middleware.Chain(chatH.SearchMessages, auth))
+
+	// Chat — Group management
+	mux.HandleFunc("POST /chat/groups", middleware.Chain(chatH.CreateGroup, auth))
+	mux.HandleFunc("PUT /chat/groups/{id}", middleware.Chain(chatH.UpdateGroup, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/avatar", middleware.Chain(chatH.UploadGroupAvatar, auth))
+	mux.HandleFunc("GET /chat/groups/{id}/members", middleware.Chain(chatH.GetGroupMembers, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/members", middleware.Chain(chatH.AddGroupMembers, auth))
+	mux.HandleFunc("DELETE /chat/groups/{id}/members/{userId}", middleware.Chain(chatH.RemoveGroupMember, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/members/{userId}/promote", middleware.Chain(chatH.PromoteMember, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/members/{userId}/demote", middleware.Chain(chatH.DemoteMember, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/leave", middleware.Chain(chatH.LeaveGroup, auth))
+
+	// Chat — Group calls (LiveKit)
+	mux.HandleFunc("POST /chat/groups/{id}/call/start", middleware.Chain(gcH.StartCall, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/call/join", middleware.Chain(gcH.JoinCall, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/call/leave", middleware.Chain(gcH.LeaveCall, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/call/end", middleware.Chain(gcH.EndCall, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/call/mute", middleware.Chain(gcH.MuteParticipant, auth))
+	mux.HandleFunc("POST /chat/groups/{id}/call/kick", middleware.Chain(gcH.KickParticipant, auth))
 
 	// Middleware stack
 	cors := middleware.NewCORS(middleware.CORSConfig{
