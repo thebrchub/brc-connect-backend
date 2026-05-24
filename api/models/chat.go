@@ -70,6 +70,8 @@ type MessageSearchResult struct {
 	SenderName      string    `json:"sender_name"`
 	SenderAvatarURL string    `json:"sender_avatar_url"`
 	RoomName        string    `json:"room_name"`
+	RoomAvatarURL   string    `json:"room_avatar_url"`
+	RoomType        string    `json:"room_type"`
 }
 
 // CallLog represents a call history entry.

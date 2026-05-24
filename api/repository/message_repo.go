@@ -107,7 +107,9 @@ func (r *MessageRepo) SearchMessages(ctx context.Context, userID, query string, 
 		SELECT m.id, m.room_id, m.sender_id, m.content, m.created_at,
 		       u.name AS sender_name,
 		       COALESCE(u.avatar_url, '') AS sender_avatar_url,
-		       CASE WHEN rm.type = 'dm' THEN COALESCE(other_u.name, '') ELSE COALESCE(rm.name, '') END AS room_name
+		       CASE WHEN rm.type = 'dm' THEN COALESCE(other_u.name, '') ELSE COALESCE(rm.name, '') END AS room_name,
+		       CASE WHEN rm.type = 'dm' THEN COALESCE(other_u.avatar_url, '') ELSE COALESCE(rm.avatar_url, '') END AS room_avatar_url,
+		       rm.type AS room_type
 		FROM messages m
 		JOIN users u ON u.id = m.sender_id
 		JOIN rooms rm ON rm.id = m.room_id
@@ -126,7 +128,7 @@ func (r *MessageRepo) SearchMessages(ctx context.Context, userID, query string, 
 	var results []models.MessageSearchResult
 	for rows.Next() {
 		var r models.MessageSearchResult
-		if err := rows.Scan(&r.ID, &r.RoomID, &r.SenderID, &r.Content, &r.CreatedAt, &r.SenderName, &r.SenderAvatarURL, &r.RoomName); err != nil {
+		if err := rows.Scan(&r.ID, &r.RoomID, &r.SenderID, &r.Content, &r.CreatedAt, &r.SenderName, &r.SenderAvatarURL, &r.RoomName, &r.RoomAvatarURL, &r.RoomType); err != nil {
 			return nil, err
 		}
 		results = append(results, r)
