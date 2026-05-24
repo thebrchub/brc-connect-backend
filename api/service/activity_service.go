@@ -50,7 +50,7 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID, employ
 	// Validate status if provided
 	if status, ok := updates["status"].(string); ok {
 		validStatuses := map[string]bool{
-			"pending": true, "contacted": true, "follow_up": true,
+			"pending": true, "contacted": true, "follow_up": true, "revisit_later": true,
 			"converted": true, "not_interested": true, "closed": true,
 		}
 		if !validStatuses[status] {
@@ -86,12 +86,16 @@ func crmToLeadStatus(crmStatus string) string {
 	switch crmStatus {
 	case "pending":
 		return "new"
-	case "contacted", "follow_up":
+	case "contacted":
 		return "contacted"
+	case "follow_up":
+		return "follow_up"
+	case "revisit_later":
+		return "revisit_later"
 	case "converted":
 		return "converted"
 	case "not_interested":
-		return "closed"
+		return "not_interested"
 	case "closed":
 		return "closed"
 	default:

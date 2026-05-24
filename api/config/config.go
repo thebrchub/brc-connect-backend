@@ -72,6 +72,6 @@ func Load() Config {
 
 		// Chat (app-specific only)
 		CacheRoomTTL:         time.Duration(helper.GetEnvInt("CACHE_ROOM_TTL_SEC", 120)) * time.Second,
-		MessageRetentionDays: helper.GetEnvInt("MESSAGE_RETENTION_DAYS", 15),
+		MessageRetentionDays: helper.GetEnvInt("MESSAGE_RETENTION_DAYS", 0),
 	}
 }

@@ -19,6 +19,14 @@ func leadToCRMStatus(leadStatus string) string {
 		return "pending"
 	case "contacted":
 		return "contacted"
+	case "qualified":
+		return "follow_up"
+	case "follow_up":
+		return "follow_up"
+	case "revisit_later":
+		return "revisit_later"
+	case "not_interested":
+		return "not_interested"
 	case "converted":
 		return "converted"
 	case "closed":
@@ -154,10 +162,10 @@ func (h *LeadHandler) UpdateLead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow updating the status field
-	validStatuses := map[string]bool{"new": true, "contacted": true, "qualified": true, "converted": true, "closed": true}
+	validStatuses := map[string]bool{"new": true, "contacted": true, "qualified": true, "follow_up": true, "revisit_later": true, "converted": true, "not_interested": true, "closed": true}
 	if status, ok := updates["status"].(string); ok {
 		if !validStatuses[status] {
-			helper.Error(w, http.StatusBadRequest, "status must be one of: new, contacted, qualified, converted, closed")
+			helper.Error(w, http.StatusBadRequest, "status must be one of: new, contacted, qualified, follow_up, revisit_later, converted, not_interested, closed")
 			return
 		}
 		existing.Status = status
