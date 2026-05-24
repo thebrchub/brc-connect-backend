@@ -250,7 +250,8 @@ func (r *RoomRepo) IsMember(ctx context.Context, roomID, userID string) (bool, e
 	})
 }
 
-// SameOrg checks if two users belong to the same admin org.
+// SameOrg checks if two users belong to the same organization.
+// All active admins and employees are considered part of the same org.
 // Cached via redis.Fetch — safe for hot paths (CanCall hook, DM creation).
 // Key is canonicalized (smaller ID first) so SameOrg(a,b) == SameOrg(b,a).
 func (r *RoomRepo) SameOrg(ctx context.Context, userID1, userID2 string) (bool, error) {
@@ -263,11 +264,11 @@ func (r *RoomRepo) SameOrg(ctx context.Context, userID1, userID2 string) (bool, 
 		var exists bool
 		err := postgress.GetPool().QueryRow(ctx, `
 			SELECT EXISTS(
-				SELECT 1 FROM users u1
-				JOIN users u2 ON (
-					COALESCE(u1.admin_id, u1.id) = COALESCE(u2.admin_id, u2.id)
-				)
-				WHERE u1.id = $1 AND u2.id = $2 AND u1.is_active AND u2.is_active
+				SELECT 1 FROM users u1, users u2
+				WHERE u1.id = $1 AND u2.id = $2
+				  AND u1.is_active AND u2.is_active
+				  AND u1.role IN ('admin', 'employee')
+				  AND u2.role IN ('admin', 'employee')
 			)
 		`, userID1, userID2).Scan(&exists)
 		return exists, err

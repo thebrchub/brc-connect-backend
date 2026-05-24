@@ -62,13 +62,14 @@ type Message struct {
 
 // MessageSearchResult is a message returned from search with room context.
 type MessageSearchResult struct {
-	ID         string    `json:"id"`
-	RoomID     string    `json:"room_id"`
-	SenderID   string    `json:"sender_id"`
-	Content    *string   `json:"content,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	SenderName string    `json:"sender_name"`
-	RoomName   string    `json:"room_name"`
+	ID              string    `json:"id"`
+	RoomID          string    `json:"room_id"`
+	SenderID        string    `json:"sender_id"`
+	Content         *string   `json:"content,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	SenderName      string    `json:"sender_name"`
+	SenderAvatarURL string    `json:"sender_avatar_url"`
+	RoomName        string    `json:"room_name"`
 }
 
 // CallLog represents a call history entry.

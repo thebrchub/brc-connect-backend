@@ -108,6 +108,11 @@ func (s *UserService) GetEmployeesByAdmin(ctx context.Context, adminID string, p
 	return s.userRepo.GetEmployeesByAdmin(ctx, adminID, page, pageSize)
 }
 
+// SearchOrgUsers searches users in the same organization by name or email.
+func (s *UserService) SearchOrgUsers(ctx context.Context, query, excludeUserID string, limit int) ([]models.User, error) {
+	return s.userRepo.SearchOrgUsers(ctx, query, excludeUserID, limit)
+}
+
 func (s *UserService) UpdateUser(ctx context.Context, id string, updates map[string]any) error {
 	// If password is being updated, hash it
 	if pass, ok := updates["password"].(string); ok && pass != "" {

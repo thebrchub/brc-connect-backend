@@ -53,8 +53,9 @@ func (h *CRMHandler) GetCRMHistory(w http.ResponseWriter, r *http.Request) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
+	statusFilter := q.Get("status")
 
-	leads, total, err := h.activitySvc.GetHistory(r.Context(), employeeID, page, pageSize)
+	leads, total, err := h.activitySvc.GetHistory(r.Context(), employeeID, page, pageSize, statusFilter)
 	if err != nil {
 		log.Printf("ERROR [crm] - get history failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch history")

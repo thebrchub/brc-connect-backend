@@ -86,6 +86,7 @@ func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandl
 	mux.HandleFunc("POST /chat/upload", middleware.Chain(chatH.UploadFile, auth))
 	mux.HandleFunc("GET /chat/file", middleware.Chain(chatH.FileURL, auth))
 	mux.HandleFunc("GET /chat/messages/search", middleware.Chain(chatH.SearchMessages, auth))
+	mux.HandleFunc("GET /chat/contacts/search", middleware.Chain(userH.SearchOrgContacts, auth))
 
 	// Chat — Group management
 	mux.HandleFunc("POST /chat/groups", middleware.Chain(chatH.CreateGroup, auth))

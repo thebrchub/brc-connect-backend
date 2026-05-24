@@ -22,8 +22,8 @@ func (s *ActivityService) GetFreshLeads(ctx context.Context, employeeID string, 
 	return s.activityRepo.GetFreshLeads(ctx, employeeID, page)
 }
 
-func (s *ActivityService) GetHistory(ctx context.Context, employeeID string, page, pageSize int) ([]repository.CRMLeadView, int, error) {
-	return s.activityRepo.GetHistory(ctx, employeeID, page, pageSize)
+func (s *ActivityService) GetHistory(ctx context.Context, employeeID string, page, pageSize int, status string) ([]repository.CRMLeadView, int, error) {
+	return s.activityRepo.GetHistory(ctx, employeeID, page, pageSize, status)
 }
 
 func (s *ActivityService) UpdateActivity(ctx context.Context, activityID, employeeID string, updates map[string]any) error {

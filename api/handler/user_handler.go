@@ -368,3 +368,49 @@ func (h *UserHandler) AvatarURL(w http.ResponseWriter, r *http.Request) {
 	}
 	helper.JSON(w, http.StatusOK, map[string]string{"url": presigned})
 }
+
+// SearchOrgContacts handles GET /chat/contacts/search?q=&limit= — search org members by name or email.
+func (h *UserHandler) SearchOrgContacts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := middleware.Subject(ctx)
+
+	q := r.URL.Query()
+	query := strings.TrimSpace(q.Get("q"))
+	if len(query) < 2 {
+		helper.Error(w, http.StatusBadRequest, "query must be at least 2 characters")
+		return
+	}
+
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 || limit > 20 {
+		limit = 10
+	}
+
+	users, err := h.userSvc.SearchOrgUsers(ctx, query, userID, limit)
+	if err != nil {
+		log.Printf("ERROR [user] - search org contacts failed user=%s error=%s", userID, err)
+		helper.Error(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+
+	type contactResult struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Email     string `json:"email"`
+		Role      string `json:"role"`
+		AvatarURL string `json:"avatar_url"`
+	}
+
+	results := make([]contactResult, 0, len(users))
+	for _, u := range users {
+		results = append(results, contactResult{
+			ID:        u.ID,
+			Name:      u.Name,
+			Email:     u.Email,
+			Role:      u.Role,
+			AvatarURL: u.AvatarURL,
+		})
+	}
+
+	helper.JSON(w, http.StatusOK, map[string]any{"results": results})
+}

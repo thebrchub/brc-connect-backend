@@ -181,6 +181,28 @@ func (r *UserRepo) ExistsByEmail(ctx context.Context, email string) (bool, error
 	return len(rows) > 0 && rows[0].Exists, nil
 }
 
+// SearchOrgUsers searches all active admins and employees by name or email.
+// All non-super_admin users are considered part of the same organization.
+func (r *UserRepo) SearchOrgUsers(ctx context.Context, query, excludeUserID string, limit int) ([]models.User, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 10
+	}
+	q := "%" + query + "%"
+	users, err := postgress.Query[models.User](ctx,
+		`SELECT * FROM users
+		 WHERE id != $1
+		   AND is_active = true
+		   AND role IN ('admin', 'employee')
+		   AND (name ILIKE $2 OR email ILIKE $2)
+		 ORDER BY name ASC
+		 LIMIT $3`,
+		excludeUserID, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func (r *UserRepo) invalidateListCache(ctx context.Context, role string, adminID *string) {
 	if role == "admin" {
 		r.invalidateByPattern(ctx, "users:admins:*")

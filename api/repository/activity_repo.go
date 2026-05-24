@@ -77,8 +77,8 @@ func (r *ActivityRepo) GetFreshLeads(ctx context.Context, employeeID string, pag
 }
 
 // GetHistory returns past contacted leads (non-pending) for an employee.
-func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, pageSize int) ([]CRMLeadView, int, error) {
-	cacheKey := fmt.Sprintf("crm:history:%s:%d:%d", employeeID, page, pageSize)
+func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, pageSize int, status string) ([]CRMLeadView, int, error) {
+	cacheKey := fmt.Sprintf("crm:history:%s:%d:%d:%s", employeeID, page, pageSize, status)
 
 	type result struct {
 		Leads []CRMLeadView `json:"leads"`
@@ -86,10 +86,18 @@ func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, 
 	}
 
 	res, err := redis.Fetch(ctx, cacheKey, r.listTTL, func(ctx context.Context) (*result, error) {
+		// Build WHERE clause based on status filter
+		baseWhere := "la.employee_id = $1 AND la.status != 'pending'"
+		args := []any{employeeID}
+		if status != "" {
+			baseWhere += " AND la.status = $2"
+			args = append(args, status)
+		}
+
+		countQuery := fmt.Sprintf("SELECT COUNT(*) AS count FROM lead_activities la WHERE %s", baseWhere)
 		countRows, err := postgress.Query[struct {
 			Count int `db:"count"`
-		}](ctx, `SELECT COUNT(*) AS count FROM lead_activities la
-			WHERE la.employee_id = $1 AND la.status != 'pending'`, employeeID)
+		}](ctx, countQuery, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -99,15 +107,20 @@ func (r *ActivityRepo) GetHistory(ctx context.Context, employeeID string, page, 
 		}
 
 		offset := (page - 1) * pageSize
-		leads, err := postgress.Query[CRMLeadView](ctx,
+		// Build data query with proper arg numbering
+		nextArg := len(args) + 1
+		dataQuery := fmt.Sprintf(
 			`SELECT l.id AS lead_id, l.business_name, l.phone_e164, l.email, l.city, l.category,
 				l.website_url, l.has_ssl, l.is_mobile_friendly, l.source,
 				la.id AS activity_id, la.status, la.notes, la.next_action, la.next_follow_up, la.last_contact, la.updated_at
 			FROM lead_activities la
 			JOIN leads l ON l.id = la.lead_id
-			WHERE la.employee_id = $1 AND la.status != 'pending'
+			WHERE %s
 			ORDER BY la.updated_at DESC
-			LIMIT $2 OFFSET $3`, employeeID, pageSize, offset)
+			LIMIT $%d OFFSET $%d`, baseWhere, nextArg, nextArg+1)
+		args = append(args, pageSize, offset)
+
+		leads, err := postgress.Query[CRMLeadView](ctx, dataQuery, args...)
 		if err != nil {
 			return nil, err
 		}
