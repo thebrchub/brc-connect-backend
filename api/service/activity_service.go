@@ -18,8 +18,8 @@ func NewActivityService(activityRepo *repository.ActivityRepo, campaignRepo *rep
 	return &ActivityService{activityRepo: activityRepo, campaignRepo: campaignRepo, leadRepo: leadRepo}
 }
 
-func (s *ActivityService) GetFreshLeads(ctx context.Context, employeeID string, page int) ([]repository.CRMLeadView, int, error) {
-	return s.activityRepo.GetFreshLeads(ctx, employeeID, page)
+func (s *ActivityService) GetFreshLeads(ctx context.Context, employeeID string, page, pageSize int) ([]repository.CRMLeadView, int, error) {
+	return s.activityRepo.GetFreshLeads(ctx, employeeID, page, pageSize)
 }
 
 func (s *ActivityService) GetHistory(ctx context.Context, employeeID string, page, pageSize int, status string) ([]repository.CRMLeadView, int, error) {

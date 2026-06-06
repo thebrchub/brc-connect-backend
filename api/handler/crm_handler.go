@@ -23,22 +23,27 @@ func NewCRMHandler(activitySvc *service.ActivityService, sessionSvc *service.Ses
 
 // --- Employee CRM Endpoints ---
 
-// GetCRMLeads handles GET /crm/leads — max 20 fresh leads for employee.
+// GetCRMLeads handles GET /crm/leads — paginated fresh leads for employee.
 func (h *CRMHandler) GetCRMLeads(w http.ResponseWriter, r *http.Request) {
 	employeeID := middleware.Subject(r.Context())
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
 	if page < 1 {
 		page = 1
 	}
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
 
-	leads, total, err := h.activitySvc.GetFreshLeads(r.Context(), employeeID, page)
+	leads, total, err := h.activitySvc.GetFreshLeads(r.Context(), employeeID, page, pageSize)
 	if err != nil {
 		log.Printf("ERROR [crm] - get fresh leads failed error=%s", err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch leads")
 		return
 	}
 
-	helper.Paginated(w, leads, page, 20, total)
+	helper.Paginated(w, leads, page, pageSize, total)
 }
 
 // GetCRMHistory handles GET /crm/leads/history — past contacted leads.
