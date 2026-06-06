@@ -187,8 +187,15 @@ func (h *CampaignHandler) AssignCampaign(w http.ResponseWriter, r *http.Request)
 		helper.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+
+	// Empty employee_id means unassign
 	if req.EmployeeID == "" {
-		helper.Error(w, http.StatusBadRequest, "employee_id is required")
+		if err := h.campaignSvc.UnassignEmployee(r.Context(), id); err != nil {
+			log.Printf("ERROR [campaign] - unassign failed id=%s error=%s", id, err)
+			helper.Error(w, http.StatusInternalServerError, "unassign failed")
+			return
+		}
+		helper.JSON(w, http.StatusOK, map[string]string{"status": "unassigned"})
 		return
 	}
 

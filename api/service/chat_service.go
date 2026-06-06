@@ -54,8 +54,8 @@ func (s *ChatService) CreateDM(ctx context.Context, adminID, currentUserID, targ
 }
 
 // GetRooms returns the paginated room list for a user.
-func (s *ChatService) GetRooms(ctx context.Context, userID, adminID, cursor string, limit int) ([]models.RoomListItem, string, error) {
-	return s.roomRepo.GetUserRooms(ctx, userID, adminID, cursor, limit)
+func (s *ChatService) GetRooms(ctx context.Context, userID, cursor string, limit int) ([]models.RoomListItem, string, error) {
+	return s.roomRepo.GetUserRooms(ctx, userID, cursor, limit)
 }
 
 // GetMessages returns paginated messages for a room.
@@ -89,9 +89,9 @@ func (s *ChatService) GetCallHistory(ctx context.Context, userID, cursor string,
 	return s.msgRepo.GetCallHistory(ctx, userID, cursor, limit)
 }
 
-// GetUserRoomIDs returns all active room IDs for a user. Used by chat.Hooks.LoadUserRooms.
-func (s *ChatService) GetUserRoomIDs(ctx context.Context, userID, adminID string) ([]string, error) {
-	return s.roomRepo.GetUserRoomIDs(ctx, userID, adminID)
+// GetUserRoomIDs returns all active room IDs for a user.
+func (s *ChatService) GetUserRoomIDs(ctx context.Context, userID string) ([]string, error) {
+	return s.roomRepo.GetUserRoomIDs(ctx, userID)
 }
 
 // GetAllUserRoomIDs returns all active room IDs for a user across all orgs.

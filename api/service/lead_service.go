@@ -89,6 +89,15 @@ func (s *LeadService) ProcessBatch(ctx context.Context, jobID string, rawLeads [
 			if err != nil {
 				log.Printf("ERROR [lead-service] - merge sources failed error=%s", err)
 			}
+			// Update content fields (never touches status)
+			websiteURL := ""
+			if raw.WebsiteURL != nil {
+				websiteURL = *raw.WebsiteURL
+			}
+			err = s.leadRepo.UpdateContent(ctx, existingID, raw.BusinessName, websiteURL, raw.City, raw.Category, raw.HasSSL, raw.IsMobileFriendly, raw.TechStack)
+			if err != nil {
+				log.Printf("ERROR [lead-service] - update content failed error=%s", err)
+			}
 			merged++
 			continue
 		}

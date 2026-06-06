@@ -305,6 +305,17 @@ func (r *CampaignRepo) AssignEmployee(ctx context.Context, campaignID, employeeI
 	return nil
 }
 
+// ClearAssignment removes assigned_to from a campaign (unassign).
+func (r *CampaignRepo) ClearAssignment(ctx context.Context, campaignID string) error {
+	_, err := postgress.Exec(ctx, "UPDATE campaigns SET assigned_to = NULL, updated_at = NOW() WHERE id = $1", campaignID)
+	if err != nil {
+		return err
+	}
+	r.invalidateListCache(ctx)
+	redis.Remove(ctx, "campaign:"+campaignID)
+	return nil
+}
+
 // DeleteByAdmin deletes a campaign owned by adminID and removes associated leads.
 // Association is inferred by the campaign's city/category job targeting for that admin.
 func (r *CampaignRepo) DeleteByAdmin(ctx context.Context, campaignID, adminID string) (int, error) {

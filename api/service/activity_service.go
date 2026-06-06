@@ -114,3 +114,7 @@ func (s *ActivityService) GetEmployeeActivity(ctx context.Context, employeeID st
 func (s *ActivityService) GetEmployeeStats(ctx context.Context, employeeID string) (*repository.EmployeeStats, error) {
 	return s.activityRepo.GetEmployeeStats(ctx, employeeID)
 }
+
+func (s *ActivityService) GetEmployeeSummary(ctx context.Context, employeeID, period string) ([]repository.PeriodSummary, error) {
+	return s.activityRepo.GetEmployeeSummary(ctx, employeeID, period)
+}

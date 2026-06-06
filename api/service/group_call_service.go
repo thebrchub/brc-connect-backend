@@ -215,7 +215,7 @@ type ActiveCallInfo struct {
 
 // GetActiveCalls returns all active group calls in the user's rooms.
 func (s *GroupCallService) GetActiveCalls(ctx context.Context, userID, adminID string) ([]ActiveCallInfo, error) {
-	roomIDs, err := s.roomRepo.GetUserRoomIDs(ctx, userID, adminID)
+	roomIDs, err := s.roomRepo.GetUserRoomIDs(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

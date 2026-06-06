@@ -193,6 +193,8 @@ func (r *ActivityRepo) UpdateActivity(ctx context.Context, id string, updates ma
 
 // PopulateForCampaign bulk-inserts lead_activities for leads belonging to a campaign's admin, scoped by city+category.
 // Also sets leads.assigned_to so the admin can see the assignment.
+// Deduplicates by employee+lead to prevent the same lead appearing twice for an employee.
+// Excludes leads with terminal status (converted, closed, not_interested) from any employee.
 func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, campaignID string) error {
 	_, err := postgress.Exec(ctx,
 		`INSERT INTO lead_activities (id, lead_id, employee_id, campaign_id, status, created_at, updated_at)
@@ -206,7 +208,11 @@ func (r *ActivityRepo) PopulateForCampaign(ctx context.Context, employeeID, camp
 			AND LOWER(l.category) = LOWER(sj.category)
 		 )
 		 AND NOT EXISTS (
-			SELECT 1 FROM lead_activities la WHERE la.lead_id = l.id AND la.campaign_id = $2
+			SELECT 1 FROM lead_activities la WHERE la.lead_id = l.id AND la.employee_id = $1
+		 )
+		 AND NOT EXISTS (
+			SELECT 1 FROM lead_activities la2
+			WHERE la2.lead_id = l.id AND la2.status IN ('converted', 'closed', 'not_interested')
 		 )`, employeeID, campaignID)
 	if err != nil {
 		return err
@@ -300,12 +306,81 @@ func (r *ActivityRepo) RemoveByLeads(ctx context.Context, leadIDs []string) erro
 	return err
 }
 
+// RemoveUnworkedByCampaign deletes lead_activities with status 'pending' or 'revisit_later' for a campaign.
+// Used when an admin unassigns a campaign from an employee.
+func (r *ActivityRepo) RemoveUnworkedByCampaign(ctx context.Context, campaignID string) error {
+	_, err := postgress.Exec(ctx,
+		`DELETE FROM lead_activities WHERE campaign_id = $1 AND status IN ('pending', 'revisit_later')`, campaignID)
+	if err != nil {
+		return err
+	}
+	r.invalidateAdminDashboard(ctx, campaignID)
+	return nil
+}
+
 // SyncStatusByLead updates the status of all lead_activities for a given lead.
 func (r *ActivityRepo) SyncStatusByLead(ctx context.Context, leadID, status string) error {
 	_, err := postgress.Exec(ctx,
 		"UPDATE lead_activities SET status = $1, updated_at = NOW() WHERE lead_id = $2 AND status != $1",
 		status, leadID)
 	return err
+}
+
+// PeriodSummary holds aggregated metrics for a single time period.
+type PeriodSummary struct {
+	PeriodStart    time.Time `db:"period_start" json:"period_start"`
+	TotalLeads     int       `db:"total_leads" json:"total_leads"`
+	Contacted      int       `db:"contacted" json:"contacted"`
+	Conversions    int       `db:"conversions" json:"conversions"`
+	FollowUps      int       `db:"follow_ups" json:"follow_ups"`
+	RevisitLater   int       `db:"revisit_later" json:"revisit_later"`
+	NotInterested  int       `db:"not_interested" json:"not_interested"`
+	Closed         int       `db:"closed" json:"closed"`
+	ContactRate    float64   `db:"-" json:"contact_rate"`
+	ConversionRate float64   `db:"-" json:"conversion_rate"`
+}
+
+// GetEmployeeSummary returns time-period aggregated stats for an employee.
+// Period can be: "daily", "weekly", "monthly", "yearly".
+func (r *ActivityRepo) GetEmployeeSummary(ctx context.Context, employeeID, period string) ([]PeriodSummary, error) {
+	trunc := "day"
+	switch period {
+	case "weekly":
+		trunc = "week"
+	case "monthly":
+		trunc = "month"
+	case "yearly":
+		trunc = "year"
+	}
+
+	rows, err := postgress.Query[PeriodSummary](ctx, fmt.Sprintf(`
+		SELECT
+			date_trunc('%s', la.updated_at) AS period_start,
+			COUNT(la.id) AS total_leads,
+			COUNT(la.id) FILTER (WHERE la.status NOT IN ('pending', 'revisit_later')) AS contacted,
+			COUNT(la.id) FILTER (WHERE la.status = 'converted') AS conversions,
+			COUNT(la.id) FILTER (WHERE la.status = 'follow_up') AS follow_ups,
+			COUNT(la.id) FILTER (WHERE la.status = 'revisit_later') AS revisit_later,
+			COUNT(la.id) FILTER (WHERE la.status = 'not_interested') AS not_interested,
+			COUNT(la.id) FILTER (WHERE la.status = 'closed') AS closed
+		FROM lead_activities la
+		WHERE la.employee_id = $1
+		GROUP BY period_start
+		ORDER BY period_start DESC
+		LIMIT 50`, trunc), employeeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate rates
+	for i := range rows {
+		if rows[i].TotalLeads > 0 {
+			rows[i].ContactRate = float64(rows[i].Contacted) / float64(rows[i].TotalLeads) * 100
+			rows[i].ConversionRate = float64(rows[i].Conversions) / float64(rows[i].TotalLeads) * 100
+		}
+	}
+
+	return rows, nil
 }
 
 // EmployeeStats holds aggregated performance metrics for an employee.
@@ -333,7 +408,7 @@ func (r *ActivityRepo) GetDashboard(ctx context.Context, adminID string) ([]Empl
 				u.id AS employee_id,
 				u.name AS employee_name,
 				COUNT(la.id) AS total_leads,
-				COUNT(la.id) FILTER (WHERE la.status != 'pending') AS contacted,
+				COUNT(la.id) FILTER (WHERE la.status NOT IN ('pending', 'revisit_later')) AS contacted,
 				COUNT(la.id) FILTER (WHERE la.status = 'converted') AS conversions,
 				COUNT(la.id) FILTER (WHERE la.next_follow_up < CURRENT_DATE
 					AND la.status NOT IN ('converted','closed','not_interested')) AS overdue_follow_ups,
@@ -406,7 +481,7 @@ func (r *ActivityRepo) GetEmployeeStats(ctx context.Context, employeeID string) 
 				u.id AS employee_id,
 				u.name AS employee_name,
 				COUNT(la.id) AS total_leads,
-				COUNT(la.id) FILTER (WHERE la.status != 'pending') AS contacted,
+				COUNT(la.id) FILTER (WHERE la.status NOT IN ('pending', 'revisit_later')) AS contacted,
 				COUNT(la.id) FILTER (WHERE la.status = 'converted') AS conversions,
 				COUNT(la.id) FILTER (WHERE la.next_follow_up < CURRENT_DATE
 					AND la.status NOT IN ('converted','closed','not_interested')) AS overdue_follow_ups,

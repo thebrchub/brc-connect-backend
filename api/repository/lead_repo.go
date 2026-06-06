@@ -207,6 +207,28 @@ func (r *LeadRepo) MergeSources(ctx context.Context, id string, newSources []str
 	return err
 }
 
+// UpdateContent updates lead content fields without touching status or assignment.
+func (r *LeadRepo) UpdateContent(ctx context.Context, id string, businessName, websiteURL, city, category string, hasSSL, isMobileFriendly *bool, techStack []byte) error {
+	_, err := postgress.Exec(ctx,
+		`UPDATE leads SET
+			business_name = COALESCE(NULLIF($2, ''), business_name),
+			website_url = COALESCE(NULLIF($3, ''), website_url),
+			city = COALESCE(NULLIF($4, ''), city),
+			category = COALESCE(NULLIF($5, ''), category),
+			has_ssl = COALESCE($6, has_ssl),
+			is_mobile_friendly = COALESCE($7, is_mobile_friendly),
+			tech_stack = COALESCE(NULLIF($8::jsonb, 'null'::jsonb), tech_stack),
+			updated_at = NOW()
+		WHERE id = $1`,
+		id, businessName, websiteURL, city, category, hasSSL, isMobileFriendly, techStack,
+	)
+	if err == nil {
+		redis.Remove(ctx, "lead:"+id)
+		r.invalidateFilterCache(ctx)
+	}
+	return err
+}
+
 // invalidateFilterCache removes all cached filter query results.
 func (r *LeadRepo) invalidateFilterCache(ctx context.Context) {
 	client := redis.GetRawClient()
@@ -262,6 +284,27 @@ func (r *LeadRepo) UnassignLeads(ctx context.Context, adminID string, leadIDs []
 	}
 	r.invalidateFilterCache(ctx)
 	return int(rowsAffected), nil
+}
+
+// ClearUnassignedLeads removes assigned_to from leads that no longer have any active lead_activities.
+// Used after campaign unassignment to clean up orphaned assignments.
+func (r *LeadRepo) ClearUnassignedLeads(ctx context.Context, campaignID string) error {
+	_, err := postgress.Exec(ctx,
+		`UPDATE leads SET assigned_to = NULL, updated_at = NOW()
+		 WHERE id IN (
+			SELECT l.id FROM leads l
+			JOIN scrape_jobs sj ON sj.campaign_id = $1
+				AND LOWER(l.city) = LOWER(sj.city)
+				AND LOWER(l.category) = LOWER(sj.category)
+			WHERE l.admin_id = (SELECT admin_id FROM campaigns WHERE id = $1)
+			AND NOT EXISTS (
+				SELECT 1 FROM lead_activities la WHERE la.lead_id = l.id
+			)
+		 )`, campaignID)
+	if err == nil {
+		r.invalidateFilterCache(ctx)
+	}
+	return err
 }
 
 // GetFilteredByAdmin returns leads scoped to an admin via admin_id column.

@@ -79,27 +79,10 @@ func (r *RoomRepo) GetByID(ctx context.Context, id string) (*models.Room, error)
 	})
 }
 
-// GetUserRoomIDs returns all active room IDs for a user (scoped by adminID).
-func (r *RoomRepo) GetUserRoomIDs(ctx context.Context, userID, adminID string) ([]string, error) {
-	rows, err := postgress.GetPool().Query(ctx, `
-		SELECT rm.room_id FROM room_members rm
-		JOIN rooms r ON r.id = rm.room_id AND r.admin_id = $2
-		WHERE rm.user_id = $1 AND rm.status = 'active'
-	`, userID, adminID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
+// GetUserRoomIDs returns all active room IDs for a user.
+// Access is controlled by room_members table — no admin_id filtering needed.
+func (r *RoomRepo) GetUserRoomIDs(ctx context.Context, userID string) ([]string, error) {
+	return r.GetAllUserRoomIDs(ctx, userID)
 }
 
 // GetAllUserRoomIDs returns all active room IDs for a user across all orgs.
@@ -126,8 +109,9 @@ func (r *RoomRepo) GetAllUserRoomIDs(ctx context.Context, userID string) ([]stri
 }
 
 // GetUserRooms returns the room list for a user with last message and unread count.
+// Access is controlled by room_members table — no admin_id filtering needed.
 // Cursor is the sort_time (RFC3339Nano) of the last item from the previous page. Empty = latest.
-func (r *RoomRepo) GetUserRooms(ctx context.Context, userID, adminID, cursor string, limit int) ([]models.RoomListItem, string, error) {
+func (r *RoomRepo) GetUserRooms(ctx context.Context, userID, cursor string, limit int) ([]models.RoomListItem, string, error) {
 	baseQuery := `
 		SELECT
 			r.id, r.type, r.name,
@@ -148,7 +132,7 @@ func (r *RoomRepo) GetUserRooms(ctx context.Context, userID, adminID, cursor str
 			) AS unread_count,
 			COALESCE(last_msg.created_at, r.updated_at) AS sort_time
 		FROM room_members rm
-		JOIN rooms r ON r.id = rm.room_id AND r.admin_id = $2
+		JOIN rooms r ON r.id = rm.room_id
 		LEFT JOIN room_members other_member ON other_member.room_id = r.id AND other_member.user_id != $1 AND r.type = 'dm'
 		LEFT JOIN users other_user ON other_user.id = other_member.user_id
 		LEFT JOIN LATERAL (
@@ -164,18 +148,18 @@ func (r *RoomRepo) GetUserRooms(ctx context.Context, userID, adminID, cursor str
 	if cursor == "" {
 		rows, err = postgress.GetPool().Query(ctx, baseQuery+`
 		ORDER BY sort_time DESC
-		LIMIT $3
-		`, userID, adminID, limit)
+		LIMIT $2
+		`, userID, limit)
 	} else {
 		cursorTime, parseErr := time.Parse(time.RFC3339Nano, cursor)
 		if parseErr != nil {
 			return nil, "", parseErr
 		}
 		rows, err = postgress.GetPool().Query(ctx, baseQuery+`
-		AND COALESCE(last_msg.created_at, r.updated_at) < $3
+		AND COALESCE(last_msg.created_at, r.updated_at) < $2
 		ORDER BY sort_time DESC
-		LIMIT $4
-		`, userID, adminID, cursorTime, limit)
+		LIMIT $3
+		`, userID, cursorTime, limit)
 	}
 	if err != nil {
 		return nil, "", err

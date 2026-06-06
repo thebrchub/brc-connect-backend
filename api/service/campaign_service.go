@@ -18,14 +18,16 @@ type CampaignService struct {
 	campaignRepo *repository.CampaignRepo
 	jobRepo      *repository.JobRepo
 	activityRepo *repository.ActivityRepo
+	leadRepo     *repository.LeadRepo
 	cfg          config.Config
 }
 
-func NewCampaignService(campaignRepo *repository.CampaignRepo, jobRepo *repository.JobRepo, activityRepo *repository.ActivityRepo, cfg config.Config) *CampaignService {
+func NewCampaignService(campaignRepo *repository.CampaignRepo, jobRepo *repository.JobRepo, activityRepo *repository.ActivityRepo, leadRepo *repository.LeadRepo, cfg config.Config) *CampaignService {
 	return &CampaignService{
 		campaignRepo: campaignRepo,
 		jobRepo:      jobRepo,
 		activityRepo: activityRepo,
+		leadRepo:     leadRepo,
 		cfg:          cfg,
 	}
 }
@@ -144,6 +146,17 @@ func (s *CampaignService) AssignEmployee(ctx context.Context, campaignID, employ
 		return err
 	}
 	return s.activityRepo.PopulateForCampaign(ctx, employeeID, campaignID)
+}
+
+// UnassignEmployee clears the assigned_to field on a campaign and removes unworked lead_activities.
+func (s *CampaignService) UnassignEmployee(ctx context.Context, campaignID string) error {
+	if err := s.campaignRepo.ClearAssignment(ctx, campaignID); err != nil {
+		return err
+	}
+	if err := s.activityRepo.RemoveUnworkedByCampaign(ctx, campaignID); err != nil {
+		return err
+	}
+	return s.leadRepo.ClearUnassignedLeads(ctx, campaignID)
 }
 
 // DeleteByAdmin removes a campaign and associated leads owned by admin.

@@ -255,3 +255,40 @@ func (h *CRMHandler) GetDashboardEngagement(w http.ResponseWriter, r *http.Reque
 
 	helper.JSON(w, http.StatusOK, engagements)
 }
+
+// GetEmployeeSummary handles GET /crm/employees/{id}/summary?period=daily|weekly|monthly|yearly
+func (h *CRMHandler) GetEmployeeSummary(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.Subject(r.Context())
+	employeeID := r.PathValue("id")
+
+	// Verify ownership
+	employee, err := h.userSvc.GetByID(r.Context(), employeeID)
+	if err != nil || employee == nil || employee.AdminID == nil || *employee.AdminID != adminID {
+		helper.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "weekly"
+	}
+	validPeriods := map[string]bool{"daily": true, "weekly": true, "monthly": true, "yearly": true}
+	if !validPeriods[period] {
+		helper.Error(w, http.StatusBadRequest, "period must be one of: daily, weekly, monthly, yearly")
+		return
+	}
+
+	summaries, err := h.activitySvc.GetEmployeeSummary(r.Context(), employeeID, period)
+	if err != nil {
+		log.Printf("ERROR [crm] - get employee summary failed error=%s", err)
+		helper.Error(w, http.StatusInternalServerError, "failed to fetch summary")
+		return
+	}
+
+	helper.JSON(w, http.StatusOK, map[string]any{
+		"employee_id":   employeeID,
+		"employee_name": employee.Name,
+		"period":        period,
+		"summaries":     summaries,
+	})
+}

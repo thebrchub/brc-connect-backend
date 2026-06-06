@@ -140,7 +140,7 @@ func main() {
 
 	// Services
 	leadSvc := service.NewLeadService(leadRepo, campaignRepo, jobRepo)
-	campaignSvc := service.NewCampaignService(campaignRepo, jobRepo, activityRepo, cfg)
+	campaignSvc := service.NewCampaignService(campaignRepo, jobRepo, activityRepo, leadRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
 	activitySvc := service.NewActivityService(activityRepo, campaignRepo, leadRepo)
 	sessionSvc := service.NewSessionService(sessionRepo)

@@ -63,6 +63,7 @@ func New(cfg config.Config, authH *handler.AuthHandler, leadH *handler.LeadHandl
 	mux.HandleFunc("GET /crm/dashboard", middleware.Chain(crmH.GetDashboard, auth, admin))
 	mux.HandleFunc("GET /crm/employees/{id}/activity", middleware.Chain(crmH.GetEmployeeActivity, auth, admin))
 	mux.HandleFunc("GET /crm/employees/{id}/stats", middleware.Chain(crmH.GetEmployeeStats, auth, admin))
+	mux.HandleFunc("GET /crm/employees/{id}/summary", middleware.Chain(crmH.GetEmployeeSummary, auth, admin))
 	mux.HandleFunc("GET /crm/employees/{id}/engagement", middleware.Chain(crmH.GetEmployeeEngagement, auth, admin))
 	mux.HandleFunc("GET /crm/dashboard/engagement", middleware.Chain(crmH.GetDashboardEngagement, auth, admin))
 

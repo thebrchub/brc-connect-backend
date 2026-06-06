@@ -111,7 +111,6 @@ func (h *ChatHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 func (h *ChatHandler) GetRooms(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := middleware.Subject(ctx)
-	adminID := getAdminID(ctx)
 
 	q := r.URL.Query()
 	cursor := q.Get("cursor")
@@ -120,9 +119,9 @@ func (h *ChatHandler) GetRooms(w http.ResponseWriter, r *http.Request) {
 		limit = 30
 	}
 
-	rooms, nextCursor, err := h.chatSvc.GetRooms(ctx, userID, adminID, cursor, limit)
+	rooms, nextCursor, err := h.chatSvc.GetRooms(ctx, userID, cursor, limit)
 	if err != nil {
-		log.Printf("ERROR [chat] - get rooms failed user=%s admin=%s error=%v", userID, adminID, err)
+		log.Printf("ERROR [chat] - get rooms failed user=%s error=%v", userID, err)
 		helper.Error(w, http.StatusInternalServerError, "failed to fetch rooms")
 		return
 	}
@@ -161,6 +160,12 @@ func (h *ChatHandler) CreateDM(w http.ResponseWriter, r *http.Request) {
 			helper.Error(w, http.StatusInternalServerError, "failed to create dm")
 		}
 		return
+	}
+
+	// Subscribe both users to the new room in the WS engine so messages route immediately.
+	if created {
+		chat.GetEngine().JoinRoomForUser(userID, room.ID)
+		chat.GetEngine().JoinRoomForUser(req.UserID, room.ID)
 	}
 
 	status := http.StatusOK
@@ -342,6 +347,13 @@ func (h *ChatHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// Subscribe all members to the new group in the WS engine.
+	chat.GetEngine().JoinRoomForUser(userID, room.ID)
+	for _, memberID := range req.MemberIDs {
+		chat.GetEngine().JoinRoomForUser(memberID, room.ID)
+	}
+
 	helper.JSON(w, http.StatusCreated, room)
 }
 
